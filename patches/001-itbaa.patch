@@ -1,5 +1,5 @@
 diff --git a/CMakePresets.json b/CMakePresets.json
-index 1cbbb12226..bc0fa9297a 100644
+index 1cbbb12226..548b006d28 100644
 --- a/CMakePresets.json
 +++ b/CMakePresets.json
 @@ -206,6 +206,32 @@
@@ -57,7 +57,7 @@ index 1cbbb12226..bc0fa9297a 100644
    ],
    "testPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index 99fa52b164..d6597a6709 100644
+index 99fa52b164..8e068ea87e 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
 @@ -22,6 +22,62 @@ endif()
@@ -151,10 +151,10 @@ index 99fa52b164..d6597a6709 100644
  endif()
 diff --git a/Utilities/Itbaa/cli/main.cpp b/Utilities/Itbaa/cli/main.cpp
 new file mode 100644
-index 0000000000..09e052c9db
+index 0000000000..8a973d4176
 --- /dev/null
 +++ b/Utilities/Itbaa/cli/main.cpp
-@@ -0,0 +1,179 @@
+@@ -0,0 +1,186 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF CLI Tool
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -166,7 +166,7 @@ index 0000000000..09e052c9db
 +#include <cstdlib>
 +#include <cstring>
 +
-+static void print_usage(const char* program)
++static void print_usage(char const* program)
 +{
 +    printf("Itbaa (اطبع) - HTML to PDF Converter v%s\n", itbaa_version());
 +    printf("Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>\n\n");
@@ -201,8 +201,8 @@ index 0000000000..09e052c9db
 +    }
 +
 +    // Parse arguments
-+    const char* input_path = nullptr;
-+    const char* output_path = nullptr;
++    char const* input_path = nullptr;
++    char const* output_path = nullptr;
 +    ItbaaOptions options = itbaa_default_options();
 +    bool info_only = false;
 +
@@ -238,7 +238,7 @@ index 0000000000..09e052c9db
 +            continue;
 +        }
 +        if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--size") == 0) && i + 1 < argc) {
-+            const char* size = argv[++i];
++            char const* size = argv[++i];
 +            if (strcmp(size, "a4") == 0)
 +                options.page_size = ITBAA_PAGE_A4;
 +            else if (strcmp(size, "letter") == 0)
@@ -318,7 +318,15 @@ index 0000000000..09e052c9db
 +        // Convert to PDF
 +        err = itbaa_convert_to_file(ctx, &options, output_path);
 +        if (err != ITBAA_OK) {
-+            fprintf(stderr, "Error: %s\n", itbaa_error_string(err));
++            if (err == ITBAA_ERROR_FILE_WRITE) {
++                fprintf(stderr, "Error: Failed to write PDF file '%s': %s\n", output_path, itbaa_error_string(err));
++                fprintf(stderr, "  Check that:\n");
++                fprintf(stderr, "  - The directory exists and is writable\n");
++                fprintf(stderr, "  - You have write permissions for the file\n");
++                fprintf(stderr, "  - There is sufficient disk space\n");
++            } else {
++                fprintf(stderr, "Error: %s\n", itbaa_error_string(err));
++            }
 +            itbaa_context_destroy(ctx);
 +            itbaa_shutdown();
 +            return 1;
@@ -333,10 +341,9 @@ index 0000000000..09e052c9db
 +    itbaa_shutdown();
 +    return 0;
 +}
-+
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
 new file mode 100644
-index 0000000000..d6156f1f8e
+index 0000000000..1e5ecbd2ea
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
 @@ -0,0 +1,311 @@
@@ -653,10 +660,10 @@ index 0000000000..d6156f1f8e
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.h b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
 new file mode 100644
-index 0000000000..764df73dbc
+index 0000000000..da2efc9a5c
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,51 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -708,13 +715,12 @@ index 0000000000..764df73dbc
 +};
 +
 +}
-+
 diff --git a/Utilities/Itbaa/lib/Itbaa.cpp b/Utilities/Itbaa/lib/Itbaa.cpp
 new file mode 100644
-index 0000000000..ee3d5a6137
+index 0000000000..c30653545b
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.cpp
-@@ -0,0 +1,304 @@
+@@ -0,0 +1,324 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -724,15 +730,21 @@ index 0000000000..ee3d5a6137
 +#include "Itbaa.h"
 +#include "PDFWriter.h"
 +#include "Renderer.h"
++#include <AK/ByteString.h>
 +#include <AK/String.h>
 +#include <LibCore/File.h>
 +#include <LibCore/MappedFile.h>
++#include <errno.h>
++#include <stdio.h>
++#include <string.h>
 +
 +// Global initialization state
 +static bool s_initialized = false;
 +
++static char s_last_error_message[512] = { 0 };
++
 +// Error messages
-+static const char* s_error_messages[] = {
++static char const* s_error_messages[] = {
 +    "Success",
 +    "Invalid argument",
 +    "Memory allocation failed",
@@ -768,12 +780,12 @@ index 0000000000..ee3d5a6137
 +    s_initialized = false;
 +}
 +
-+const char* itbaa_version(void)
++char const* itbaa_version(void)
 +{
 +    return ITBAA_VERSION_STRING;
 +}
 +
-+const char* itbaa_error_string(ItbaaError error)
++char const* itbaa_error_string(ItbaaError error)
 +{
 +    int index = -static_cast<int>(error);
 +    if (index < 0 || index >= static_cast<int>(sizeof(s_error_messages) / sizeof(s_error_messages[0])))
@@ -816,7 +828,7 @@ index 0000000000..ee3d5a6137
 +    delete ctx;
 +}
 +
-+ItbaaError itbaa_load_html(ItbaaContext* ctx, const char* html, size_t html_len)
++ItbaaError itbaa_load_html(ItbaaContext* ctx, char const* html, size_t html_len)
 +{
 +    if (!s_initialized)
 +        return ITBAA_ERROR_NOT_INITIALIZED;
@@ -836,7 +848,7 @@ index 0000000000..ee3d5a6137
 +    return ITBAA_OK;
 +}
 +
-+ItbaaError itbaa_load_html_file(ItbaaContext* ctx, const char* path)
++ItbaaError itbaa_load_html_file(ItbaaContext* ctx, char const* path)
 +{
 +    if (!s_initialized)
 +        return ITBAA_ERROR_NOT_INITIALIZED;
@@ -848,10 +860,10 @@ index 0000000000..ee3d5a6137
 +        return ITBAA_ERROR_FILE_NOT_FOUND;
 +
 +    auto file = file_result.release_value();
-+    return itbaa_load_html(ctx, reinterpret_cast<const char*>(file->bytes().data()), file->bytes().size());
++    return itbaa_load_html(ctx, reinterpret_cast<char const*>(file->bytes().data()), file->bytes().size());
 +}
 +
-+static Itbaa::RenderConfig options_to_config(const ItbaaOptions* options)
++static Itbaa::RenderConfig options_to_config(ItbaaOptions const* options)
 +{
 +    Itbaa::RenderConfig config;
 +
@@ -888,7 +900,7 @@ index 0000000000..ee3d5a6137
 +    return config;
 +}
 +
-+ItbaaError itbaa_get_info(ItbaaContext* ctx, const ItbaaOptions* options, ItbaaDocumentInfo* info)
++ItbaaError itbaa_get_info(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaDocumentInfo* info)
 +{
 +    if (!s_initialized)
 +        return ITBAA_ERROR_NOT_INITIALIZED;
@@ -908,7 +920,7 @@ index 0000000000..ee3d5a6137
 +    return ITBAA_OK;
 +}
 +
-+ItbaaError itbaa_convert(ItbaaContext* ctx, const ItbaaOptions* options, ItbaaPDFBuffer* output)
++ItbaaError itbaa_convert(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaPDFBuffer* output)
 +{
 +    if (!s_initialized)
 +        return ITBAA_ERROR_NOT_INITIALIZED;
@@ -942,7 +954,7 @@ index 0000000000..ee3d5a6137
 +    return ITBAA_OK;
 +}
 +
-+ItbaaError itbaa_convert_to_file(ItbaaContext* ctx, const ItbaaOptions* options, const char* output_path)
++ItbaaError itbaa_convert_to_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path)
 +{
 +    if (!s_initialized)
 +        return ITBAA_ERROR_NOT_INITIALIZED;
@@ -961,8 +973,23 @@ index 0000000000..ee3d5a6137
 +    // Generate PDF to file
 +    Itbaa::PDFWriter writer;
 +    auto result = writer.generate_to_file(pages, StringView { output_path, strlen(output_path) });
-+    if (result.is_error())
++    if (result.is_error()) {
++        auto error = result.release_error();
++        auto error_str = error.is_errno()
++            ? ByteString::formatted("{} (errno {})", strerror(error.code()), error.code())
++            : ByteString(error.string_literal());
++
++        auto error_bytes = error_str.bytes();
++        size_t copy_len = error_bytes.size() < sizeof(s_last_error_message) - 1
++            ? error_bytes.size()
++            : sizeof(s_last_error_message) - 1;
++        memcpy(s_last_error_message, error_bytes.data(), copy_len);
++        s_last_error_message[copy_len] = '\0';
++
++        fprintf(stderr, "DEBUG: File write error details: %s\n", s_last_error_message);
++
 +        return ITBAA_ERROR_FILE_WRITE;
++    }
 +
 +    return ITBAA_OK;
 +}
@@ -977,10 +1004,10 @@ index 0000000000..ee3d5a6137
 +}
 +
 +ItbaaError itbaa_html_to_pdf_file(
-+    const char* html,
++    char const* html,
 +    size_t html_len,
-+    const char* output_path,
-+    const ItbaaOptions* options)
++    char const* output_path,
++    ItbaaOptions const* options)
 +{
 +    ItbaaContext* ctx = itbaa_context_create();
 +    if (!ctx)
@@ -998,9 +1025,9 @@ index 0000000000..ee3d5a6137
 +}
 +
 +ItbaaError itbaa_file_to_pdf_file(
-+    const char* input_path,
-+    const char* output_path,
-+    const ItbaaOptions* options)
++    char const* input_path,
++    char const* output_path,
++    ItbaaOptions const* options)
 +{
 +    ItbaaContext* ctx = itbaa_context_create();
 +    if (!ctx)
@@ -1018,13 +1045,12 @@ index 0000000000..ee3d5a6137
 +}
 +
 +} // extern "C"
-+
 diff --git a/Utilities/Itbaa/lib/Itbaa.h b/Utilities/Itbaa/lib/Itbaa.h
 new file mode 100644
-index 0000000000..428773b6f6
+index 0000000000..c0ea09fdf2
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.h
-@@ -0,0 +1,195 @@
+@@ -0,0 +1,194 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1076,20 +1102,20 @@ index 0000000000..428773b6f6
 +
 +/* Page size presets (in pixels at 96 DPI) */
 +typedef enum {
-+    ITBAA_PAGE_A4,           /* 794 x 1123 */
-+    ITBAA_PAGE_LETTER,       /* 816 x 1056 */
-+    ITBAA_PAGE_LEGAL,        /* 816 x 1344 */
-+    ITBAA_PAGE_A3,           /* 1123 x 1587 */
-+    ITBAA_PAGE_CUSTOM,       /* Use width/height from options */
++    ITBAA_PAGE_A4,     /* 794 x 1123 */
++    ITBAA_PAGE_LETTER, /* 816 x 1056 */
++    ITBAA_PAGE_LEGAL,  /* 816 x 1344 */
++    ITBAA_PAGE_A3,     /* 1123 x 1587 */
++    ITBAA_PAGE_CUSTOM, /* Use width/height from options */
 +} ItbaaPageSize;
 +
 +/* Conversion options */
 +typedef struct {
 +    ItbaaPageSize page_size;
-+    uint32_t width;          /* Custom width (pixels at 96 DPI) */
-+    uint32_t height;         /* Custom height (pixels at 96 DPI) */
-+    uint32_t max_pages;      /* 0 = unlimited */
-+    int full_page;           /* 1 = capture entire scrollable content */
++    uint32_t width;     /* Custom width (pixels at 96 DPI) */
++    uint32_t height;    /* Custom height (pixels at 96 DPI) */
++    uint32_t max_pages; /* 0 = unlimited */
++    int full_page;      /* 1 = capture entire scrollable content */
 +} ItbaaOptions;
 +
 +/* Document information */
@@ -1124,12 +1150,12 @@ index 0000000000..428773b6f6
 +/**
 + * Get the version string.
 + */
-+const char* itbaa_version(void);
++char const* itbaa_version(void);
 +
 +/**
 + * Get a human-readable error message.
 + */
-+const char* itbaa_error_string(ItbaaError error);
++char const* itbaa_error_string(ItbaaError error);
 +
 +/* ============================================================================
 + * Context Management
@@ -1163,30 +1189,30 @@ index 0000000000..428773b6f6
 + * Load HTML content into the context.
 + * The HTML string is copied internally.
 + */
-+ItbaaError itbaa_load_html(ItbaaContext* ctx, const char* html, size_t html_len);
++ItbaaError itbaa_load_html(ItbaaContext* ctx, char const* html, size_t html_len);
 +
 +/**
 + * Load HTML from a file.
 + */
-+ItbaaError itbaa_load_html_file(ItbaaContext* ctx, const char* path);
++ItbaaError itbaa_load_html_file(ItbaaContext* ctx, char const* path);
 +
 +/**
 + * Get document information (page count, dimensions).
 + * Must be called after itbaa_load_html.
 + */
-+ItbaaError itbaa_get_info(ItbaaContext* ctx, const ItbaaOptions* options, ItbaaDocumentInfo* info);
++ItbaaError itbaa_get_info(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaDocumentInfo* info);
 +
 +/**
 + * Convert loaded HTML to PDF.
 + * Returns a buffer containing the PDF data.
 + * Caller must free with itbaa_free_buffer().
 + */
-+ItbaaError itbaa_convert(ItbaaContext* ctx, const ItbaaOptions* options, ItbaaPDFBuffer* output);
++ItbaaError itbaa_convert(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaPDFBuffer* output);
 +
 +/**
 + * Convert HTML to PDF and write directly to a file.
 + */
-+ItbaaError itbaa_convert_to_file(ItbaaContext* ctx, const ItbaaOptions* options, const char* output_path);
++ItbaaError itbaa_convert_to_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path);
 +
 +/**
 + * Free a PDF buffer returned by itbaa_convert().
@@ -1201,31 +1227,30 @@ index 0000000000..428773b6f6
 + * One-shot conversion: HTML string to PDF file.
 + */
 +ItbaaError itbaa_html_to_pdf_file(
-+    const char* html,
++    char const* html,
 +    size_t html_len,
-+    const char* output_path,
-+    const ItbaaOptions* options  /* NULL for defaults */
++    char const* output_path,
++    ItbaaOptions const* options /* NULL for defaults */
 +);
 +
 +/**
 + * One-shot conversion: HTML file to PDF file.
 + */
 +ItbaaError itbaa_file_to_pdf_file(
-+    const char* input_path,
-+    const char* output_path,
-+    const ItbaaOptions* options  /* NULL for defaults */
++    char const* input_path,
++    char const* output_path,
++    ItbaaOptions const* options /* NULL for defaults */
 +);
 +
 +#ifdef __cplusplus
 +}
 +#endif
-+
 diff --git a/Utilities/Itbaa/lib/PDFWriter.cpp b/Utilities/Itbaa/lib/PDFWriter.cpp
 new file mode 100644
-index 0000000000..76cb78bd40
+index 0000000000..c9d41ee54b
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/PDFWriter.cpp
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,124 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1233,7 +1258,10 @@ index 0000000000..76cb78bd40
 + */
 +
 +#include "PDFWriter.h"
++#include <AK/ByteString.h>
 +#include <LibCore/File.h>
++#include <errno.h>
++#include <string.h>
 +
 +#include <codec/SkCodec.h>
 +#include <core/SkCanvas.h>
@@ -1263,20 +1291,20 @@ index 0000000000..76cb78bd40
 +    SkDynamicMemoryWStream stream;
 +
 +    SkPDF::Metadata metadata;
-+    
++
 +    // Convert StringView to SkString
 +    if (!m_metadata.title.is_empty()) {
 +        auto title_string = String::from_utf8(m_metadata.title);
 +        if (!title_string.is_error())
 +            metadata.fTitle = SkString(title_string.value().bytes_as_string_view().characters_without_null_termination(), title_string.value().bytes().size());
 +    }
-+    
++
 +    if (!m_metadata.author.is_empty()) {
 +        auto author_string = String::from_utf8(m_metadata.author);
 +        if (!author_string.is_error())
 +            metadata.fAuthor = SkString(author_string.value().bytes_as_string_view().characters_without_null_termination(), author_string.value().bytes().size());
 +    }
-+    
++
 +    if (!m_metadata.creator.is_empty()) {
 +        auto creator_string = String::from_utf8(m_metadata.creator);
 +        if (!creator_string.is_error())
@@ -1323,19 +1351,36 @@ index 0000000000..76cb78bd40
 +ErrorOr<void> PDFWriter::generate_to_file(Vector<RenderedPage> const& pages, StringView path)
 +{
 +    auto pdf_data = TRY(generate(pages));
-+    auto file = TRY(Core::File::open(path, Core::File::OpenMode::Write));
-+    TRY(file->write_until_depleted(pdf_data));
++
++    auto file_result = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
++    if (file_result.is_error()) {
++        auto error = file_result.release_error();
++        auto error_msg = error.is_errno()
++            ? ByteString::formatted("Failed to open file '{}': {} (errno {})", path, strerror(error.code()), error.code())
++            : ByteString::formatted("Failed to open file '{}': {}", path, error.string_literal());
++        return Error::from_string_view(error_msg.view());
++    }
++    auto file = file_result.release_value();
++
++    auto write_result = file->write_until_depleted(pdf_data);
++    if (write_result.is_error()) {
++        auto error = write_result.release_error();
++        auto error_msg = error.is_errno()
++            ? ByteString::formatted("Failed to write file '{}': {} (errno {})", path, strerror(error.code()), error.code())
++            : ByteString::formatted("Failed to write file '{}': {}", path, error.string_literal());
++        return Error::from_string_view(error_msg.view());
++    }
++
 +    return {};
 +}
 +
 +} // namespace Itbaa
-+
 diff --git a/Utilities/Itbaa/lib/PDFWriter.h b/Utilities/Itbaa/lib/PDFWriter.h
 new file mode 100644
-index 0000000000..43c36599fd
+index 0000000000..3fda3f6c02
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/PDFWriter.h
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,42 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1378,13 +1423,12 @@ index 0000000000..43c36599fd
 +};
 +
 +} // namespace Itbaa
-+
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..e737399686
+index 0000000000..d4cdebae5c
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,343 @@
+@@ -0,0 +1,349 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1441,10 +1485,18 @@ index 0000000000..e737399686
 +    virtual ~RendererPageClient() override = default;
 +
 +    virtual u64 id() const override { return 1; }
-+    virtual Web::Page& page() override { VERIFY(m_page); return *m_page; }
-+    virtual Web::Page const& page() const override { VERIFY(m_page); return *m_page; }
++    virtual Web::Page& page() override
++    {
++        VERIFY(m_page);
++        return *m_page;
++    }
++    virtual Web::Page const& page() const override
++    {
++        VERIFY(m_page);
++        return *m_page;
++    }
 +    virtual bool is_connection_open() const override { return true; }
-+    
++
 +    virtual Gfx::Palette palette() const override
 +    {
 +        if (!m_palette_impl) {
@@ -1459,12 +1511,12 @@ index 0000000000..e737399686
 +        }
 +        return Gfx::Palette(*m_palette_impl);
 +    }
-+    
++
 +    virtual Web::DevicePixelRect screen_rect() const override
 +    {
 +        return Web::DevicePixelRect { 0, 0, m_viewport_size.width(), m_viewport_size.height() };
 +    }
-+    
++
 +    virtual double device_pixels_per_css_pixel() const override { return 1.0; }
 +    virtual Web::CSS::PreferredColorScheme preferred_color_scheme() const override { return Web::CSS::PreferredColorScheme::Auto; }
 +    virtual Web::CSS::PreferredContrast preferred_contrast() const override { return Web::CSS::PreferredContrast::Auto; }
@@ -1487,20 +1539,20 @@ index 0000000000..e737399686
 +
 +        int page_width = m_viewport_size.width().value();
 +        int page_height = m_viewport_size.height().value();
-+        
++
 +        if (page_width <= 0 || page_height <= 0) {
 +            page_width = 794;
 +            page_height = 1123;
 +        }
-+        
++
 +        float device_pixels_per_css = page().client().device_pixels_per_css_pixel();
-+        
++
 +        // Set viewport size for proper layout
 +        document->navigable()->set_viewport_size(Web::CSSPixelSize { page_width / device_pixels_per_css, page_height / device_pixels_per_css });
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
 +        document->update_layout(UpdateLayoutReason::Debugging);
-+        
++
 +        int total_height = page_height;
 +        if (m_full_page_mode && document->paintable()) {
 +            if (auto scroll_rect = document->paintable()->scrollable_overflow_rect(); scroll_rect.has_value()) {
@@ -1510,7 +1562,7 @@ index 0000000000..e737399686
 +                }
 +            }
 +        }
-+        
++
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
 +        document->update_layout(UpdateLayoutReason::Debugging);
@@ -1528,25 +1580,24 @@ index 0000000000..e737399686
 +
 +        int num_pages = (total_height + page_height - 1) / page_height;
 +        Vector<RenderedPage> pages;
-+        
++
 +        for (int page_num = 0; page_num < num_pages; page_num++) {
 +            int y_offset = page_num * page_height;
 +            int this_page_height = AK::min(page_height, total_height - y_offset);
-+            
++
 +            SkPictureRecorder recorder;
 +            SkCanvas* canvas = recorder.beginRecording(page_width, this_page_height);
 +            canvas->translate(0, -y_offset);
-+            
++
 +            Itbaa::DisplayListPlayerPDF player(*canvas);
 +            player.execute(*display_list);
-+            
++
 +            sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
-+            
++
 +            pages.append(RenderedPage {
 +                .picture = picture,
 +                .width = page_width,
-+                .height = this_page_height
-+            });
++                .height = this_page_height });
 +        }
 +
 +        return pages;
@@ -1561,16 +1612,16 @@ index 0000000000..e737399686
 +        int page_width = m_viewport_size.width().value();
 +        int page_height = m_viewport_size.height().value();
 +        float device_pixels_per_css = page().client().device_pixels_per_css_pixel();
-+        
++
 +        // Set viewport size for proper layout
 +        document->navigable()->set_viewport_size(Web::CSSPixelSize { page_width / device_pixels_per_css, page_height / device_pixels_per_css });
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
 +        document->update_layout(UpdateLayoutReason::Debugging);
-+        
++
 +        int total_height = page_height;
 +        int content_width = page_width;
-+        
++
 +        if (document->paintable()) {
 +            if (auto scroll_rect = document->paintable()->scrollable_overflow_rect(); scroll_rect.has_value()) {
 +                total_height = static_cast<int>(scroll_rect->height().to_double() * device_pixels_per_css);
@@ -1618,12 +1669,12 @@ index 0000000000..e737399686
 +        return {};
 +
 +    s_event_loop = make<Core::EventLoop>();
-+    
++
 +    Web::Platform::EventLoopPlugin::install(*new Web::Platform::EventLoopPluginSerenity);
 +    Web::Bindings::initialize_main_thread_vm(Web::Bindings::AgentType::SimilarOriginWindow);
-+    
++
 +    auto& vm = Web::Bindings::main_thread_vm();
-+    
++
 +    auto& font_provider = static_cast<Gfx::PathFontProvider&>(
 +        Gfx::FontDatabase::the().install_system_font_provider(make<Gfx::PathFontProvider>()));
 +    font_provider.load_all_fonts_from_uri("resource://fonts"sv);
@@ -1634,7 +1685,7 @@ index 0000000000..e737399686
 +    auto client_socket = TRY(Core::LocalSocket::adopt_fd(socket_fds[0]));
 +    TRY(client_socket->set_blocking(true));
 +    TRY(Core::System::close(socket_fds[1]));
-+    
++
 +    auto request_client = TRY(try_make_ref_counted<Requests::RequestClient>(make<IPC::Transport>(move(client_socket))));
 +    Web::ResourceLoader::initialize(vm.heap(), move(request_client));
 +
@@ -1727,13 +1778,12 @@ index 0000000000..e737399686
 +}
 +
 +} // namespace Itbaa
-+
 diff --git a/Utilities/Itbaa/lib/Renderer.h b/Utilities/Itbaa/lib/Renderer.h
 new file mode 100644
-index 0000000000..52505f564f
+index 0000000000..afb8296b82
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.h
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,82 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1784,13 +1834,13 @@ index 0000000000..52505f564f
 +
 +    // Initialize the rendering engine (call once)
 +    static ErrorOr<void> initialize();
-+    
++
 +    // Shutdown the rendering engine
 +    static void shutdown();
 +
 +    // Load HTML content
 +    ErrorOr<void> load_html(StringView html);
-+    
++
 +    // Load HTML from file
 +    ErrorOr<void> load_html_file(StringView path);
 +
@@ -1816,14 +1866,13 @@ index 0000000000..52505f564f
 +};
 +
 +} // namespace Itbaa
-+
 diff --git a/itbaa-dist b/itbaa-dist
 new file mode 160000
-index 0000000000..bede335bb2
+index 0000000000..fd1d51eaa0
 --- /dev/null
 +++ b/itbaa-dist
 @@ -0,0 +1 @@
-+Subproject commit bede335bb2c942b9474e15901bf73d92c51c2498-dirty
++Subproject commit fd1d51eaa0bd8f5e912d599acbb47355a8c34572-dirty
 diff --git a/vcpkg.json b/vcpkg.json
 index ffbb406aa1..4be10ca647 100644
 --- a/vcpkg.json
