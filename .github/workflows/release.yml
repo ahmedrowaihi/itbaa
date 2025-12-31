@@ -187,7 +187,8 @@ jobs:
               if: steps.check-existing.outputs.skip != 'true'
               run: |
                   mkdir -p artifact
-                  cp ladybird/Build/bin/itbaa-cli artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
+                  # Binary is named 'itbaa' not 'itbaa-cli'
+                  cp ladybird/Build/bin/itbaa artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
                   chmod +x artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
 
                   # Create archive
