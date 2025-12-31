@@ -154,7 +154,8 @@ jobs:
 
             - name: Save vcpkg binary cache
               uses: actions/cache/save@v4
-              if: always() && steps.check-existing.outputs.skip != 'true'
+              if: always() && steps.check-existing.outputs.skip != 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+              continue-on-error: true
               with:
                   path: ladybird/Build/caches/vcpkg-binary-cache
                   key: vcpkg-binary-${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.ladybird-commit.outputs.commit }}
