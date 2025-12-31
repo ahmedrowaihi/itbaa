@@ -19,10 +19,26 @@
 
 ### Prerequisites
 
+**For building:**
+
 - macOS 14+ or Linux
 - CMake 3.25+
 - Ninja
 - Clang/LLVM 18+
+
+**For running pre-built binaries:**
+
+- Linux: `libatomic1`, `libstdc++6`, `libgcc-s1`, `fontconfig`, `fonts-liberation`
+
+    ```bash
+    # Ubuntu/Debian
+    sudo apt-get install libatomic1 libstdc++6 libgcc-s1 fontconfig fonts-liberation
+
+    # CentOS/RHEL
+    sudo yum install libatomic libstdc++ libgcc fontconfig liberation-fonts
+    ```
+
+- macOS: No additional dependencies (all libraries included)
 
 ### Build
 
