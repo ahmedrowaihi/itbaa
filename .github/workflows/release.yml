@@ -1,0 +1,219 @@
+name: Release
+
+on:
+    push:
+        tags:
+            - "v*"
+    workflow_dispatch:
+        inputs:
+            tag:
+                description: "Release tag (e.g. v0.1.0)"
+                required: true
+
+env:
+    LADYBIRD_COMMIT_FILE: LADYBIRD_COMMIT
+
+jobs:
+    build:
+        name: Build ${{ matrix.os_name }}-${{ matrix.arch }}
+        runs-on: ${{ matrix.runner }}
+
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - os_name: linux
+                      arch: x86_64
+                      runner: ubuntu-24.04
+                      toolchain: GNU
+
+                    - os_name: linux
+                      arch: arm64
+                      runner: ubuntu-24.04-arm
+                      toolchain: Clang
+
+                    - os_name: macos
+                      arch: arm64
+                      runner: macos-14
+                      toolchain: Clang
+
+        steps:
+            - name: Checkout Itbaa
+              uses: actions/checkout@v4
+
+            - name: Get Ladybird commit
+              id: ladybird-commit
+              run: |
+                  COMMIT=$(head -1 ${{ env.LADYBIRD_COMMIT_FILE }})
+                  echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+                  echo "Using Ladybird commit: $COMMIT"
+
+            - name: Checkout Ladybird (shallow)
+              uses: actions/checkout@v4
+              with:
+                  repository: LadybirdBrowser/ladybird
+                  ref: ${{ steps.ladybird-commit.outputs.commit }}
+                  path: ladybird
+                  fetch-depth: 1 # Shallow clone - ~500MB vs ~5GB
+
+            - name: Apply Itbaa patches
+              run: |
+                  cd ladybird
+                  git apply ../patches/*.patch
+
+            - name: Setup Python
+              uses: actions/setup-python@v5
+              with:
+                  python-version: "3.12"
+
+            - name: Install Python dependencies
+              run: pip install pyyaml requests six
+
+            - name: Install Dependencies (Linux)
+              if: matrix.os_name == 'linux'
+              run: |
+                  sudo apt-get update -y
+                  sudo apt-get install -y autoconf autoconf-archive automake build-essential \
+                    ccache cmake curl gcc-14 g++-14 libcurl4-openssl-dev libssl-dev \
+                    libstdc++-14-dev nasm ninja-build tar unzip zip
+
+                  if [ "${{ matrix.toolchain }}" == "Clang" ]; then
+                    curl -f -o /tmp/llvm.key https://apt.llvm.org/llvm-snapshot.gpg.key
+                    sudo install -D /tmp/llvm.key /usr/share/keyrings/llvm-snapshot.gpg.key
+                    echo "deb [signed-by=/usr/share/keyrings/llvm-snapshot.gpg.key] http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+                    sudo apt-get update -y
+                    sudo apt-get install -y clang-20 lld-20
+                  fi
+
+                  sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-14 100
+                  sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
+
+            - name: Install Dependencies (macOS)
+              if: matrix.os_name == 'macos'
+              run: |
+                  brew update
+                  brew install autoconf autoconf-archive automake bash ccache cmake coreutils \
+                    libtool nasm ninja pkg-config unzip
+
+            - name: Restore vcpkg cache
+              uses: actions/cache/restore@v4
+              id: vcpkg-cache
+              with:
+                  path: ladybird/Build/vcpkg
+                  key: vcpkg-${{ matrix.os_name }}-${{ matrix.arch }}-${{ hashFiles('ladybird/vcpkg.json') }}
+                  restore-keys: vcpkg-${{ matrix.os_name }}-${{ matrix.arch }}-
+
+            - name: Setup vcpkg
+              working-directory: ladybird
+              run: ./Toolchain/BuildVcpkg.py
+
+            - name: Save vcpkg cache
+              uses: actions/cache/save@v4
+              if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
+              with:
+                  path: ladybird/Build/vcpkg
+                  key: vcpkg-${{ matrix.os_name }}-${{ matrix.arch }}-${{ hashFiles('ladybird/vcpkg.json') }}
+
+            - name: Set compiler (Linux GNU)
+              if: matrix.os_name == 'linux' && matrix.toolchain == 'GNU'
+              run: |
+                  echo "CC=gcc-14" >> "$GITHUB_ENV"
+                  echo "CXX=g++-14" >> "$GITHUB_ENV"
+
+            - name: Set compiler (Linux Clang)
+              if: matrix.os_name == 'linux' && matrix.toolchain == 'Clang'
+              run: |
+                  echo "CC=clang-20" >> "$GITHUB_ENV"
+                  echo "CXX=clang++-20" >> "$GITHUB_ENV"
+
+            - name: Set compiler (macOS)
+              if: matrix.os_name == 'macos'
+              run: |
+                  echo "CC=$(xcrun --find clang)" >> "$GITHUB_ENV"
+                  echo "CXX=$(xcrun --find clang++)" >> "$GITHUB_ENV"
+
+            - name: Configure
+              working-directory: ladybird
+              run: |
+                  cmake --preset Itbaa_Static -B Build \
+                    -DCMAKE_C_COMPILER=$CC \
+                    -DCMAKE_CXX_COMPILER=$CXX
+
+            - name: Build
+              working-directory: ladybird
+              run: cmake --build Build --target itbaa-cli
+
+            - name: Prepare artifact
+              run: |
+                  mkdir -p artifact
+                  cp ladybird/Build/bin/itbaa-cli artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
+                  chmod +x artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
+
+                  # Create archive
+                  cd artifact
+                  if [ "${{ matrix.os_name }}" == "linux" ]; then
+                    tar -czvf itbaa-${{ matrix.os_name }}-${{ matrix.arch }}.tar.gz itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
+                  else
+                    zip itbaa-${{ matrix.os_name }}-${{ matrix.arch }}.zip itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
+                  fi
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
+                  path: artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}.*
+
+    release:
+        name: Create Release
+        needs: build
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+
+        steps:
+            - name: Download all artifacts
+              uses: actions/download-artifact@v4
+              with:
+                  path: artifacts
+                  merge-multiple: true
+
+            - name: List artifacts
+              run: ls -la artifacts/
+
+            - name: Create Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+                  name: Itbaa ${{ github.event.inputs.tag || github.ref_name }}
+                  draft: false
+                  prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
+                  files: artifacts/*
+                  body: |
+                      ## Itbaa (إطبع) - HTML to PDF Converter
+
+                      Powered by the Ladybird rendering engine.
+
+                      ### Downloads
+
+                      | Platform | Architecture | File |
+                      |----------|--------------|------|
+                      | Linux | x86_64 | `itbaa-linux-x86_64.tar.gz` |
+                      | Linux | arm64 | `itbaa-linux-arm64.tar.gz` |
+                      | macOS | arm64 (Apple Silicon) | `itbaa-macos-arm64.zip` |
+
+                      ### Usage
+
+                      ```bash
+                      # Basic conversion
+                      itbaa input.html output.pdf
+
+                      # Custom viewport
+                      itbaa input.html output.pdf --width 1200 --height 800
+
+                      # Get document info
+                      itbaa input.html --info
+                      ```
+
+                      ### Checksums
+
+                      Run `sha256sum` on downloaded files to verify integrity.

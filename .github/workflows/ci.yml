@@ -1,0 +1,48 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+env:
+    LADYBIRD_COMMIT_FILE: LADYBIRD_COMMIT
+
+jobs:
+    verify-patches:
+        name: Verify Patches Apply
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout Itbaa
+              uses: actions/checkout@v4
+
+            - name: Get Ladybird commit
+              id: ladybird-commit
+              run: |
+                  COMMIT=$(head -1 ${{ env.LADYBIRD_COMMIT_FILE }})
+                  echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+                  echo "Using Ladybird commit: $COMMIT"
+
+            - name: Checkout Ladybird (shallow)
+              uses: actions/checkout@v4
+              with:
+                  repository: LadybirdBrowser/ladybird
+                  ref: ${{ steps.ladybird-commit.outputs.commit }}
+                  path: ladybird
+                  fetch-depth: 1
+
+            - name: Verify patches apply
+              run: |
+                  cd ladybird
+                  git apply --check ../patches/*.patch
+                  git apply ../patches/*.patch
+                  echo "✓ All patches applied successfully"
+
+            - name: Verify Itbaa files exist
+              run: |
+                  test -f ladybird/Utilities/Itbaa/cli/main.cpp
+                  test -f ladybird/Utilities/Itbaa/lib/Itbaa.h
+                  test -f ladybird/Utilities/Itbaa/lib/Itbaa.cpp
+                  echo "✓ All Itbaa files present"
