@@ -10,11 +10,23 @@
 
 - **Vector PDF output** - Generates true vector PDFs with selectable text
 - **Full font support** - Handles embedded fonts, base64 fonts, and system fonts
-
 - **International text** - Full support for RTL languages (Arabic, Hebrew) and complex scripts
 - **Multi-page documents** - Automatic pagination with configurable page sizes
 - **Full CSS support** - Modern CSS including flexbox, grid, and custom properties
 - **C API** - Easy integration with Node.js, Python, and other languages
+- **High Performance** - 6.72x faster than Playwright, 13.86x faster than Puppeteer
+
+## Performance
+
+Benchmark results comparing Itbaa with Playwright and Puppeteer on a simple HTML document (10 iterations):
+
+| Tool       | Time (ms) [min-max]       | Binary Size |
+| ---------- | ------------------------- | ----------- |
+| **Itbaa**  | 111.66 (73.45-446.15)     | 118~240 MB      |
+| Playwright | 717.92 (657.29-1178.56)   | ~516 MB     |
+| Puppeteer  | 1667.35 (1317.29-4559.41) | ~1.9 GB     |
+
+**Itbaa is 6.43x faster than Playwright and 14.93x faster than Puppeteer** with a smaller footprint (118 MB standalone vs 516 MB+ for Playwright and 1.9 GB+ for Puppeteer including Chromium). Itbaa uses Ladybird's lightweight rendering engine directly (no browser overhead) and is compiled C++ for native performance.
 
 ## Quick Start
 
