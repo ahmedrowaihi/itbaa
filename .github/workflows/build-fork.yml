@@ -1,17 +1,7 @@
-name: Release
+name: Build from Fork
 
 on:
-    push:
-        tags:
-            - "v*"
     workflow_dispatch:
-        inputs:
-            tag:
-                description: "Release tag (e.g. v0.1.0)"
-                required: true
-
-env:
-    LADYBIRD_COMMIT_FILE: LADYBIRD_COMMIT
 
 jobs:
     build:
@@ -41,67 +31,29 @@ jobs:
             - name: Checkout Itbaa
               uses: actions/checkout@v4
 
-            - name: Determine release tag
-              id: tag
-              run: |
-                  TAG="${{ github.event.inputs.tag || github.ref_name }}"
-                  echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-                  echo "Release tag: $TAG"
-
-            - name: Check if artifact already exists in release
-              id: check-existing
-              env:
-                  GH_TOKEN: ${{ github.token }}
-              run: |
-                  TAG="${{ steps.tag.outputs.tag }}"
-                  ARTIFACT_NAME="itbaa-${{ matrix.os_name }}-${{ matrix.arch }}"
-
-                  echo "Checking for existing artifact: $ARTIFACT_NAME in release $TAG"
-
-                  # Check if release exists and has our artifact
-                  if gh release view "$TAG" --json assets --jq '.assets[].name' 2>/dev/null | grep -q "^${ARTIFACT_NAME}"; then
-                    echo "Artifact already exists in release - skipping build"
-                    echo "skip=true" >> "$GITHUB_OUTPUT"
-                  else
-                    echo "Artifact not found - will build"
-                    echo "skip=false" >> "$GITHUB_OUTPUT"
-                  fi
-
-            - name: Get Ladybird commit
-              if: steps.check-existing.outputs.skip != 'true'
-              id: ladybird-commit
-              run: |
-                  COMMIT=$(head -1 ${{ env.LADYBIRD_COMMIT_FILE }})
-                  echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
-                  echo "Using Ladybird commit: $COMMIT"
-
-            - name: Checkout Ladybird (shallow)
-              if: steps.check-existing.outputs.skip != 'true'
+            - name: Checkout Ladybird from fork (upstream branch)
               uses: actions/checkout@v4
               with:
-                  repository: LadybirdBrowser/ladybird
-                  ref: ${{ steps.ladybird-commit.outputs.commit }}
+                  repository: ahmedrowaihi/ladybird-itbaa
+                  ref: upstream
                   path: ladybird
-                  fetch-depth: 1 # Shallow clone - ~500MB vs ~5GB
+                  fetch-depth: 1
 
             - name: Apply Itbaa patches
-              if: steps.check-existing.outputs.skip != 'true'
               run: |
                   cd ladybird
                   git apply ../patches/*.patch
 
             - name: Setup Python
-              if: steps.check-existing.outputs.skip != 'true'
               uses: actions/setup-python@v5
               with:
                   python-version: "3.12"
 
             - name: Install Python dependencies
-              if: steps.check-existing.outputs.skip != 'true'
               run: pip install pyyaml requests six
 
             - name: Install Dependencies (Linux)
-              if: steps.check-existing.outputs.skip != 'true' && matrix.os_name == 'linux'
+              if: matrix.os_name == 'linux'
               run: |
                   sudo apt-get update -y
                   sudo apt-get install -y autoconf autoconf-archive automake build-essential \
@@ -121,65 +73,60 @@ jobs:
                   sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-14 100
 
             - name: Install Dependencies (macOS)
-              if: steps.check-existing.outputs.skip != 'true' && matrix.os_name == 'macos'
+              if: matrix.os_name == 'macos'
               run: |
                   brew update
                   brew install autoconf autoconf-archive automake bash ccache cmake coreutils \
                     libtool llvm@20 nasm ninja pkg-config unzip
 
             - name: Setup ccache
-              if: steps.check-existing.outputs.skip != 'true'
               uses: hendrikmuhs/ccache-action@v1
               with:
-                  key: ${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.ladybird-commit.outputs.commit }}
+                  key: ${{ matrix.os_name }}-${{ matrix.arch }}-fork-upstream
                   max-size: 3G
 
             - name: Create cache directories
-              if: steps.check-existing.outputs.skip != 'true'
               run: mkdir -p ladybird/Build/caches/vcpkg-binary-cache
 
             - name: Restore vcpkg binary cache
-              if: steps.check-existing.outputs.skip != 'true'
               uses: actions/cache/restore@v4
               id: vcpkg-cache
               with:
                   path: ladybird/Build/caches/vcpkg-binary-cache
-                  key: vcpkg-binary-${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.ladybird-commit.outputs.commit }}
+                  key: vcpkg-binary-${{ matrix.os_name }}-${{ matrix.arch }}-fork-upstream
                   restore-keys: vcpkg-binary-${{ matrix.os_name }}-${{ matrix.arch }}-
 
             - name: Setup vcpkg
-              if: steps.check-existing.outputs.skip != 'true'
               working-directory: ladybird
               run: ./Toolchain/BuildVcpkg.py
 
             - name: Save vcpkg binary cache
               uses: actions/cache/save@v4
-              if: always() && steps.check-existing.outputs.skip != 'true' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+              if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
               continue-on-error: true
               with:
                   path: ladybird/Build/caches/vcpkg-binary-cache
-                  key: vcpkg-binary-${{ matrix.os_name }}-${{ matrix.arch }}-${{ steps.ladybird-commit.outputs.commit }}
+                  key: vcpkg-binary-${{ matrix.os_name }}-${{ matrix.arch }}-fork-upstream
 
             - name: Set compiler (Linux GNU)
-              if: steps.check-existing.outputs.skip != 'true' && matrix.os_name == 'linux' && matrix.toolchain == 'GNU'
+              if: matrix.os_name == 'linux' && matrix.toolchain == 'GNU'
               run: |
                   echo "CC=gcc-14" >> "$GITHUB_ENV"
                   echo "CXX=g++-14" >> "$GITHUB_ENV"
 
             - name: Set compiler (Linux Clang)
-              if: steps.check-existing.outputs.skip != 'true' && matrix.os_name == 'linux' && matrix.toolchain == 'Clang'
+              if: matrix.os_name == 'linux' && matrix.toolchain == 'Clang'
               run: |
                   echo "CC=clang-20" >> "$GITHUB_ENV"
                   echo "CXX=clang++-20" >> "$GITHUB_ENV"
 
             - name: Set compiler (macOS)
-              if: steps.check-existing.outputs.skip != 'true' && matrix.os_name == 'macos'
+              if: matrix.os_name == 'macos'
               run: |
                   echo "CC=$(brew --prefix llvm@20)/bin/clang" >> "$GITHUB_ENV"
                   echo "CXX=$(brew --prefix llvm@20)/bin/clang++" >> "$GITHUB_ENV"
 
             - name: Configure
-              if: steps.check-existing.outputs.skip != 'true'
               working-directory: ladybird
               run: |
                   if [ "${{ matrix.os_name }}" == "macos" ]; then
@@ -200,12 +147,10 @@ jobs:
                   fi
 
             - name: Build
-              if: steps.check-existing.outputs.skip != 'true'
               working-directory: ladybird
               run: cmake --build Build --target itbaa-cli
 
             - name: Prepare artifact
-              if: steps.check-existing.outputs.skip != 'true'
               run: |
                   mkdir -p artifact
                   # Binary is named 'itbaa' not 'itbaa-cli'
@@ -221,71 +166,7 @@ jobs:
                   fi
 
             - name: Upload artifact
-              if: steps.check-existing.outputs.skip != 'true'
               uses: actions/upload-artifact@v4
               with:
                   name: itbaa-${{ matrix.os_name }}-${{ matrix.arch }}
                   path: artifact/itbaa-${{ matrix.os_name }}-${{ matrix.arch }}.*
-
-    release:
-        name: Create Release
-        needs: build
-        if: always() && needs.build.result != 'cancelled'
-        runs-on: ubuntu-latest
-        permissions:
-            contents: write
-
-        steps:
-            - name: Download all artifacts
-              uses: actions/download-artifact@v4
-              with:
-                  path: artifacts
-                  merge-multiple: true
-              continue-on-error: true
-
-            - name: Check for artifacts
-              run: |
-                  if [ ! -d artifacts ] || [ -z "$(ls -A artifacts 2>/dev/null)" ]; then
-                    echo "No artifacts found - all builds failed"
-                    exit 1
-                  fi
-                  echo "Available artifacts:"
-                  ls -la artifacts/
-
-            - name: Create Release
-              uses: softprops/action-gh-release@v2
-              with:
-                  tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-                  name: Itbaa ${{ github.event.inputs.tag || github.ref_name }}
-                  draft: false
-                  prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') || contains(github.ref_name, 'rc') }}
-                  files: artifacts/*
-                  body: |
-                      ## Itbaa (اطبع) - HTML to PDF Converter
-
-                      Powered by the Ladybird rendering engine.
-
-                      ### Downloads
-
-                      | Platform | Architecture | File |
-                      |----------|--------------|------|
-                      | Linux | x86_64 | `itbaa-linux-x86_64.tar.gz` |
-                      | Linux | arm64 | `itbaa-linux-arm64.tar.gz` |
-                      | macOS | arm64 (Apple Silicon) | `itbaa-macos-arm64.zip` |
-
-                      ### Usage
-
-                      ```bash
-                      # Basic conversion
-                      itbaa input.html output.pdf
-
-                      # Custom viewport
-                      itbaa input.html output.pdf --width 1200 --height 800
-
-                      # Get document info
-                      itbaa input.html --info
-                      ```
-
-                      ### Checksums
-
-                      Run `sha256sum` on downloaded files to verify integrity.
