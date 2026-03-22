@@ -1,11 +1,45 @@
+diff --git a/.gitignore b/.gitignore
+index 40e75a3e05..41a7c8a6cf 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -63,3 +63,4 @@ Meta/CMake/vcpkg/user-variables.cmake
+ .DS_Store
+ 
+ __pycache__
++itbaa-dist/
 diff --git a/CMakePresets.json b/CMakePresets.json
-index 1cbbb12226..548b006d28 100644
+index 2fc895a32a..ab4c984667 100644
 --- a/CMakePresets.json
 +++ b/CMakePresets.json
-@@ -206,6 +206,32 @@
-           "toolchain": "Swift"
-         }
-       }
+@@ -29,6 +29,20 @@
+       "configurePreset": "Sanitizer",
+       "displayName": "Sanitizer Build",
+       "description": "Build the project with Sanitizers on Unix"
++    },
++    {
++      "name": "Itbaa",
++      "inherits": "base",
++      "configurePreset": "Itbaa",
++      "displayName": "Itbaa Build",
++      "description": "Build Itbaa HTML to PDF library and CLI"
++    },
++    {
++      "name": "Itbaa_Static",
++      "inherits": "base",
++      "configurePreset": "Itbaa_Static",
++      "displayName": "Itbaa Static Build",
++      "description": "Build Itbaa with static linking for distribution"
+     }
+   ],
+   "testPresets": [
+diff --git a/Meta/CMake/presets/CMakeUnixPresets.json b/Meta/CMake/presets/CMakeUnixPresets.json
+index ea7d9039a7..489a158d67 100644
+--- a/Meta/CMake/presets/CMakeUnixPresets.json
++++ b/Meta/CMake/presets/CMakeUnixPresets.json
+@@ -55,6 +55,32 @@
+         "unix_base",
+         "All_Debug_base"
+       ]
 +    },
 +    {
 +      "name": "Itbaa",
@@ -35,29 +69,8 @@ index 1cbbb12226..548b006d28 100644
      }
    ],
    "buildPresets": [
-@@ -300,6 +326,20 @@
-       "configurePreset": "Swift_Release",
-       "displayName": "Swift Release Build",
-       "description": "Build the project for Swift release on Unix"
-+    },
-+    {
-+      "name": "Itbaa",
-+      "inherits": "unix_base",
-+      "configurePreset": "Itbaa",
-+      "displayName": "Itbaa Build",
-+      "description": "Build Itbaa HTML to PDF library and CLI"
-+    },
-+    {
-+      "name": "Itbaa_Static",
-+      "inherits": "unix_base",
-+      "configurePreset": "Itbaa_Static",
-+      "displayName": "Itbaa Static Build",
-+      "description": "Build Itbaa with static linking for distribution"
-     }
-   ],
-   "testPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index 99fa52b164..8e068ea87e 100644
+index 0cf3746f19..35fc5583c4 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
 @@ -22,6 +22,62 @@ endif()
@@ -1867,10 +1880,10 @@ index 0000000000..afb8296b82
 +
 +} // namespace Itbaa
 diff --git a/vcpkg.json b/vcpkg.json
-index ffbb406aa1..31189c8df7 100644
+index d4a1b5a5ea..f4774ab999 100644
 --- a/vcpkg.json
 +++ b/vcpkg.json
-@@ -172,7 +172,8 @@
+@@ -178,7 +178,8 @@
          "metal",
          "fontconfig",
          "harfbuzz",
@@ -1880,7 +1893,7 @@ index ffbb406aa1..31189c8df7 100644
        ]
      },
      {
-@@ -183,6 +184,7 @@
+@@ -189,6 +190,7 @@
          "freetype",
          "harfbuzz",
          "icu",
@@ -1888,7 +1901,7 @@ index ffbb406aa1..31189c8df7 100644
          "vulkan"
        ]
      },
-@@ -195,6 +197,7 @@
+@@ -201,6 +203,7 @@
          "fontconfig",
          "harfbuzz",
          "icu",
@@ -1896,8 +1909,8 @@ index ffbb406aa1..31189c8df7 100644
          "vulkan"
        ]
      },
-@@ -216,7 +219,11 @@
-     },
+@@ -222,7 +225,11 @@
+     "vulkan",
      "vulkan-headers",
      "woff2",
 -    "zlib"
