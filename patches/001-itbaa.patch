@@ -33,7 +33,7 @@ index 2fc895a32a..ab4c984667 100644
    ],
    "testPresets": [
 diff --git a/Meta/CMake/presets/CMakeUnixPresets.json b/Meta/CMake/presets/CMakeUnixPresets.json
-index ea7d9039a7..161666f5a5 100644
+index ea7d9039a7..16133f2206 100644
 --- a/Meta/CMake/presets/CMakeUnixPresets.json
 +++ b/Meta/CMake/presets/CMakeUnixPresets.json
 @@ -55,6 +55,32 @@
@@ -50,7 +50,7 @@ index ea7d9039a7..161666f5a5 100644
 +      "cacheVariables": {
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
-+        "ENABLE_GUI_TARGETS": "ON"
++        "ENABLE_GUI_TARGETS": "OFF"
 +      }
 +    },
 +    {
@@ -63,17 +63,17 @@ index ea7d9039a7..161666f5a5 100644
 +        "BUILD_SHARED_LIBS": "OFF",
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
-+        "ENABLE_GUI_TARGETS": "ON",
++        "ENABLE_GUI_TARGETS": "OFF",
 +        "VCPKG_OVERLAY_TRIPLETS": "$env{LADYBIRD_SOURCE_DIR}/Meta/CMake/vcpkg/distribution-triplets"
 +      }
      }
    ],
    "buildPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index caa5dadebd..12b7dde0df 100644
+index caa5dadebd..9b39b5e3b4 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
-@@ -21,6 +21,61 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
+@@ -21,6 +21,62 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
  ladybird_utility(dump-html-tokens SOURCES dump-html-tokens.cpp LIBS LibMain LibWeb)
  ladybird_utility(dump-html-tree SOURCES dump-html-tree.cpp LIBS LibMain LibWeb LibJS LibGC LibGfx LibIPC LibURL)
  
@@ -99,6 +99,7 @@ index caa5dadebd..12b7dde0df 100644
 +target_link_libraries(itbaa PUBLIC
 +    LibWeb
 +    LibGfx
++    LibImageDecoders
 +    LibCore
 +    LibJS
 +    LibGC
@@ -135,7 +136,7 @@ index caa5dadebd..12b7dde0df 100644
  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      include(CheckCSourceCompiles)
      # Check for musl's declaration of __assert_fail
-@@ -60,10 +115,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -60,10 +116,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
      install(TARGETS wasm COMPONENT wasm)
      install(FILES "${GIT_COMMIT_FILE}" COMPONENT wasm DESTINATION .)
  
@@ -153,7 +154,7 @@ index caa5dadebd..12b7dde0df 100644
      set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
      if (APPLE)
          if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES AND "x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-@@ -77,6 +138,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -77,6 +139,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
  
      set(CPACK_ARCHIVE_JS_FILE_NAME "ladybird-js-${CPACK_SYSTEM_NAME}")
      set(CPACK_ARCHIVE_WASM_FILE_NAME "ladybird-wasm-${CPACK_SYSTEM_NAME}")
@@ -1430,10 +1431,10 @@ index 0000000000..3fda3f6c02
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..64acebe584
+index 0000000000..4b6b780d7e
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,368 @@
+@@ -0,0 +1,416 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1447,8 +1448,10 @@ index 0000000000..64acebe584
 +#include <LibCore/MappedFile.h>
 +#include <LibCore/Socket.h>
 +#include <LibCore/System.h>
++#include <LibCore/Promise.h>
 +#include <LibGfx/Font/FontDatabase.h>
 +#include <LibGfx/Font/PathFontProvider.h>
++#include <LibGfx/ImageFormats/ImageDecoder.h>
 +#include <LibGfx/PaintingSurface.h>
 +#include <LibGfx/Palette.h>
 +#include <LibIPC/Transport.h>
@@ -1467,6 +1470,7 @@ index 0000000000..64acebe584
 +#include <LibWeb/Painting/ViewportPaintable.h>
 +#include <LibWeb/Platform/EventLoopPlugin.h>
 +#include <LibWeb/Platform/FontPlugin.h>
++#include <LibWeb/Platform/ImageCodecPlugin.h>
 +
 +#include <core/SkCanvas.h>
 +#include <core/SkPicture.h>
@@ -1475,6 +1479,51 @@ index 0000000000..64acebe584
 +using namespace Web::DOM;
 +
 +namespace Itbaa {
++
++// Decodes images synchronously in-process via LibGfx, avoiding a separate ImageDecoder process.
++class InProcessImageCodecPlugin final : public Web::Platform::ImageCodecPlugin {
++public:
++    virtual ~InProcessImageCodecPlugin() override = default;
++
++    virtual NonnullRefPtr<Core::Promise<Web::Platform::DecodedImage>> decode_image(
++        ReadonlyBytes bytes,
++        Function<ErrorOr<void>(Web::Platform::DecodedImage&)> on_resolved,
++        Function<void(Error&)> on_rejected) override
++    {
++        auto promise = Core::Promise<Web::Platform::DecodedImage>::construct();
++        if (on_resolved)
++            promise->on_resolution = move(on_resolved);
++        if (on_rejected)
++            promise->on_rejection = move(on_rejected);
++
++        auto decoder = Gfx::ImageDecoder::try_create_for_raw_bytes(bytes);
++        if (decoder.is_error() || !decoder.value()) {
++            promise->reject(Error::from_string_literal("Failed to create image decoder"));
++            return promise;
++        }
++        auto image_decoder = decoder.release_value();
++
++        Web::Platform::DecodedImage decoded;
++        decoded.is_animated = image_decoder->is_animated();
++        decoded.loop_count = image_decoder->loop_count();
++        decoded.frame_count = image_decoder->frame_count();
++        for (size_t i = 0; i < image_decoder->frame_count(); ++i) {
++            auto frame = image_decoder->frame(i);
++            if (frame.is_error()) {
++                promise->reject(Error::from_string_literal("Failed to decode image frame"));
++                return promise;
++            }
++            decoded.frames.empend(frame.value().image, static_cast<size_t>(frame.value().duration));
++            decoded.all_durations.append(frame.value().duration);
++        }
++
++        promise->resolve(move(decoded));
++        return promise;
++    }
++
++    virtual void request_animation_frames(i64, u32, u32) override { }
++    virtual void stop_animation_decode(i64) override { }
++};
 +
 +// Internal PageClient for headless rendering
 +class RendererPageClient final : public Web::PageClient {
@@ -1691,13 +1740,13 @@ index 0000000000..64acebe584
 +
 +    Web::Platform::EventLoopPlugin::install(*new Web::Platform::EventLoopPlugin);
 +    Web::Bindings::initialize_main_thread_vm(Web::Bindings::AgentType::SimilarOriginWindow);
-+
 +    auto& vm = Web::Bindings::main_thread_vm();
 +
 +    auto& font_provider = static_cast<Gfx::PathFontProvider&>(
 +        Gfx::FontDatabase::the().install_system_font_provider(make<Gfx::PathFontProvider>()));
 +    font_provider.load_all_fonts_from_uri("resource://fonts"sv);
 +    Web::Platform::FontPlugin::install(*new Web::Platform::FontPlugin(false, &font_provider));
++    Web::Platform::ImageCodecPlugin::install(*new InProcessImageCodecPlugin);
 +
 +    // ResourceLoader requires a RequestClient. There is no request server in this CLI, so wire
 +    // it to the local end of a transport pair (portable across socket/mach-port platforms); the
