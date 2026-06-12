@@ -179,12 +179,16 @@ jobs:
               -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-ld_classic" \
               -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-ld_classic"
           else
+            # itbaa renders via Skia CPU; disable Vulkan so LibGfx doesn't require system libdrm
+            # (which vcpkg's pkg-config can't see) on Linux.
             cmake --preset Itbaa_Static -B Build \
               -DCMAKE_C_COMPILER="$CC" \
               -DCMAKE_CXX_COMPILER="$CXX" \
               -DBUILD_TESTING=OFF \
               -DENABLE_CI_BASELINE_CPU=ON \
-              -DPython3_EXECUTABLE="${{ env.pythonLocation }}/bin/python"
+              -DPython3_EXECUTABLE="${{ env.pythonLocation }}/bin/python" \
+              -DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON \
+              -DCMAKE_DISABLE_FIND_PACKAGE_VulkanHeaders=ON
           fi
 
       - name: Build

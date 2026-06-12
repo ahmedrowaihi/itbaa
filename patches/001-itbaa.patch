@@ -70,10 +70,10 @@ index ea7d9039a7..161666f5a5 100644
    ],
    "buildPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index caa5dadebd..9b39b5e3b4 100644
+index caa5dadebd..d8add745cc 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
-@@ -21,6 +21,62 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
+@@ -21,6 +21,64 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
  ladybird_utility(dump-html-tokens SOURCES dump-html-tokens.cpp LIBS LibMain LibWeb)
  ladybird_utility(dump-html-tree SOURCES dump-html-tree.cpp LIBS LibMain LibWeb LibJS LibGC LibGfx LibIPC LibURL)
  
@@ -88,6 +88,8 @@ index caa5dadebd..9b39b5e3b4 100644
 +    Itbaa/lib/Renderer.cpp
 +    Itbaa/lib/PDFWriter.cpp
 +    Itbaa/lib/DisplayListPlayerPDF.cpp
++    Itbaa/lib/InProcessImageCodecPlugin.cpp
++    Itbaa/lib/RequestClientFactory.cpp
 +)
 +
 +target_include_directories(itbaa PUBLIC
@@ -136,7 +138,7 @@ index caa5dadebd..9b39b5e3b4 100644
  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      include(CheckCSourceCompiles)
      # Check for musl's declaration of __assert_fail
-@@ -60,10 +116,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -60,10 +118,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
      install(TARGETS wasm COMPONENT wasm)
      install(FILES "${GIT_COMMIT_FILE}" COMPONENT wasm DESTINATION .)
  
@@ -154,7 +156,7 @@ index caa5dadebd..9b39b5e3b4 100644
      set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
      if (APPLE)
          if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES AND "x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-@@ -77,6 +139,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -77,6 +141,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
  
      set(CPACK_ARCHIVE_JS_FILE_NAME "ladybird-js-${CPACK_SYSTEM_NAME}")
      set(CPACK_ARCHIVE_WASM_FILE_NAME "ladybird-wasm-${CPACK_SYSTEM_NAME}")
@@ -719,6 +721,95 @@ index 0000000000..def434563f
 +};
 +
 +}
+diff --git a/Utilities/Itbaa/lib/InProcessImageCodecPlugin.cpp b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.cpp
+new file mode 100644
+index 0000000000..df95f6fccc
+--- /dev/null
++++ b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.cpp
+@@ -0,0 +1,49 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#include "InProcessImageCodecPlugin.h"
++
++#include <LibGfx/ImageFormats/ImageDecoder.h>
++
++namespace Itbaa {
++
++NonnullRefPtr<Core::Promise<Web::Platform::DecodedImage>> InProcessImageCodecPlugin::decode_image(
++    ReadonlyBytes bytes,
++    Function<ErrorOr<void>(Web::Platform::DecodedImage&)> on_resolved,
++    Function<void(Error&)> on_rejected)
++{
++    auto promise = Core::Promise<Web::Platform::DecodedImage>::construct();
++    if (on_resolved)
++        promise->on_resolution = move(on_resolved);
++    if (on_rejected)
++        promise->on_rejection = move(on_rejected);
++
++    auto decoder = Gfx::ImageDecoder::try_create_for_raw_bytes(bytes);
++    if (decoder.is_error() || !decoder.value()) {
++        promise->reject(Error::from_string_literal("Failed to create image decoder"));
++        return promise;
++    }
++    auto image_decoder = decoder.release_value();
++
++    Web::Platform::DecodedImage decoded;
++    decoded.is_animated = image_decoder->is_animated();
++    decoded.loop_count = image_decoder->loop_count();
++    decoded.frame_count = image_decoder->frame_count();
++    for (size_t i = 0; i < image_decoder->frame_count(); ++i) {
++        auto frame = image_decoder->frame(i);
++        if (frame.is_error()) {
++            promise->reject(Error::from_string_literal("Failed to decode image frame"));
++            return promise;
++        }
++        decoded.frames.empend(frame.value().image, static_cast<size_t>(frame.value().duration));
++        decoded.all_durations.append(frame.value().duration);
++    }
++
++    promise->resolve(move(decoded));
++    return promise;
++}
++
++}
+diff --git a/Utilities/Itbaa/lib/InProcessImageCodecPlugin.h b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.h
+new file mode 100644
+index 0000000000..3301fbf207
+--- /dev/null
++++ b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.h
+@@ -0,0 +1,28 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <LibCore/Promise.h>
++#include <LibWeb/Platform/ImageCodecPlugin.h>
++
++namespace Itbaa {
++
++// Decodes images synchronously in-process via LibGfx, avoiding a separate ImageDecoder process.
++class InProcessImageCodecPlugin final : public Web::Platform::ImageCodecPlugin {
++public:
++    virtual ~InProcessImageCodecPlugin() override = default;
++
++    virtual NonnullRefPtr<Core::Promise<Web::Platform::DecodedImage>> decode_image(
++        ReadonlyBytes,
++        Function<ErrorOr<void>(Web::Platform::DecodedImage&)> on_resolved,
++        Function<void(Error&)> on_rejected) override;
++
++    virtual void request_animation_frames(i64, u32, u32) override { }
++    virtual void stop_animation_decode(i64) override { }
++};
++
++}
 diff --git a/Utilities/Itbaa/lib/Itbaa.cpp b/Utilities/Itbaa/lib/Itbaa.cpp
 new file mode 100644
 index 0000000000..e6ff1b0543
@@ -1068,10 +1159,10 @@ index 0000000000..e6ff1b0543
 +} // extern "C"
 diff --git a/Utilities/Itbaa/lib/Itbaa.h b/Utilities/Itbaa/lib/Itbaa.h
 new file mode 100644
-index 0000000000..c0ea09fdf2
+index 0000000000..cba0695427
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.h
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,193 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1157,8 +1248,7 @@ index 0000000000..c0ea09fdf2
 + * ============================================================================ */
 +
 +/**
-+ * Initialize the Itbaa library.
-+ * Must be called before any other functions.
++ * Initialize the Itbaa library. Must be called before any other functions.
 + * Returns ITBAA_OK on success.
 + */
 +ItbaaError itbaa_init(void);
@@ -1446,10 +1536,10 @@ index 0000000000..3fda3f6c02
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..1a17a9a763
+index 0000000000..d73a1d11ca
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,419 @@
+@@ -0,0 +1,369 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1457,23 +1547,21 @@ index 0000000000..1a17a9a763
 + */
 +
 +#include "DisplayListPlayerPDF.h"
++#include "InProcessImageCodecPlugin.h"
 +#include "Renderer.h"
++#include "RequestClientFactory.h"
 +
 +#include <fcntl.h>
 +
 +#include <LibCore/AnonymousBuffer.h>
 +#include <LibCore/EventLoop.h>
 +#include <LibCore/MappedFile.h>
-+#include <LibCore/Promise.h>
 +#include <LibCore/System.h>
 +#include <LibGfx/Font/FontDatabase.h>
 +#include <LibGfx/Font/PathFontProvider.h>
-+#include <LibGfx/ImageFormats/ImageDecoder.h>
 +#include <LibGfx/PaintingSurface.h>
 +#include <LibGfx/Palette.h>
-+#include <LibIPC/Transport.h>
 +#include <LibJS/Runtime/VM.h>
-+#include <LibRequests/RequestClient.h>
 +#include <LibURL/URL.h>
 +#include <LibWeb/Bindings/MainThreadVM.h>
 +#include <LibWeb/DOM/Document.h>
@@ -1496,51 +1584,6 @@ index 0000000000..1a17a9a763
 +using namespace Web::DOM;
 +
 +namespace Itbaa {
-+
-+// Decodes images synchronously in-process via LibGfx, avoiding a separate ImageDecoder process.
-+class InProcessImageCodecPlugin final : public Web::Platform::ImageCodecPlugin {
-+public:
-+    virtual ~InProcessImageCodecPlugin() override = default;
-+
-+    virtual NonnullRefPtr<Core::Promise<Web::Platform::DecodedImage>> decode_image(
-+        ReadonlyBytes bytes,
-+        Function<ErrorOr<void>(Web::Platform::DecodedImage&)> on_resolved,
-+        Function<void(Error&)> on_rejected) override
-+    {
-+        auto promise = Core::Promise<Web::Platform::DecodedImage>::construct();
-+        if (on_resolved)
-+            promise->on_resolution = move(on_resolved);
-+        if (on_rejected)
-+            promise->on_rejection = move(on_rejected);
-+
-+        auto decoder = Gfx::ImageDecoder::try_create_for_raw_bytes(bytes);
-+        if (decoder.is_error() || !decoder.value()) {
-+            promise->reject(Error::from_string_literal("Failed to create image decoder"));
-+            return promise;
-+        }
-+        auto image_decoder = decoder.release_value();
-+
-+        Web::Platform::DecodedImage decoded;
-+        decoded.is_animated = image_decoder->is_animated();
-+        decoded.loop_count = image_decoder->loop_count();
-+        decoded.frame_count = image_decoder->frame_count();
-+        for (size_t i = 0; i < image_decoder->frame_count(); ++i) {
-+            auto frame = image_decoder->frame(i);
-+            if (frame.is_error()) {
-+                promise->reject(Error::from_string_literal("Failed to decode image frame"));
-+                return promise;
-+            }
-+            decoded.frames.empend(frame.value().image, static_cast<size_t>(frame.value().duration));
-+            decoded.all_durations.append(frame.value().duration);
-+        }
-+
-+        promise->resolve(move(decoded));
-+        return promise;
-+    }
-+
-+    virtual void request_animation_frames(i64, u32, u32) override { }
-+    virtual void stop_animation_decode(i64) override { }
-+};
 +
 +// Internal PageClient for headless rendering
 +class RendererPageClient final : public Web::PageClient {
@@ -1765,10 +1808,7 @@ index 0000000000..1a17a9a763
 +    Web::Platform::FontPlugin::install(*new Web::Platform::FontPlugin(false, &font_provider));
 +    Web::Platform::ImageCodecPlugin::install(*new InProcessImageCodecPlugin);
 +
-+    // ResourceLoader requires a RequestClient, but this CLI has no request server: wire it to a
-+    // dead transport pair. No network is issued; only file:// and data: subresources load.
-+    auto transport = TRY(IPC::Transport::create_paired());
-+    auto request_client = TRY(try_make_ref_counted<Requests::RequestClient>(move(transport.local)));
++    auto request_client = TRY(create_request_client());
 +    Web::ResourceLoader::initialize(vm.heap(), move(request_client));
 +
 +    s_renderer_initialized = true;
@@ -1807,7 +1847,7 @@ index 0000000000..1a17a9a763
 +    else
 +        page->load_html(m_html_content);
 +
-+    // Process events until document is ready
++    // Pump until idle so subresources (fonts, images, CSS) finish loading before render.
 +    while (Core::EventLoop::current().pump(Core::EventLoop::WaitMode::PollForEvents))
 +        ;
 +
@@ -1871,7 +1911,7 @@ index 0000000000..1a17a9a763
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.h b/Utilities/Itbaa/lib/Renderer.h
 new file mode 100644
-index 0000000000..06d7207ad7
+index 0000000000..650a13e704
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.h
 @@ -0,0 +1,85 @@
@@ -1925,7 +1965,7 @@ index 0000000000..06d7207ad7
 +    Renderer();
 +    ~Renderer();
 +
-+    // Initialize the rendering engine (call once)
++    // Initialize the rendering engine (call once).
 +    static ErrorOr<void> initialize();
 +
 +    // Shutdown the rendering engine
@@ -1960,6 +2000,55 @@ index 0000000000..06d7207ad7
 +};
 +
 +} // namespace Itbaa
+diff --git a/Utilities/Itbaa/lib/RequestClientFactory.cpp b/Utilities/Itbaa/lib/RequestClientFactory.cpp
+new file mode 100644
+index 0000000000..9f72fd6574
+--- /dev/null
++++ b/Utilities/Itbaa/lib/RequestClientFactory.cpp
+@@ -0,0 +1,19 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#include "RequestClientFactory.h"
++
++#include <LibIPC/Transport.h>
++
++namespace Itbaa {
++
++ErrorOr<NonnullRefPtr<Requests::RequestClient>> create_request_client()
++{
++    auto paired = TRY(IPC::Transport::create_paired());
++    return try_make_ref_counted<Requests::RequestClient>(move(paired.local));
++}
++
++}
+diff --git a/Utilities/Itbaa/lib/RequestClientFactory.h b/Utilities/Itbaa/lib/RequestClientFactory.h
+new file mode 100644
+index 0000000000..f45b3ccb58
+--- /dev/null
++++ b/Utilities/Itbaa/lib/RequestClientFactory.h
+@@ -0,0 +1,18 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <AK/Error.h>
++#include <LibRequests/RequestClient.h>
++
++namespace Itbaa {
++
++// ResourceLoader requires a RequestClient. This CLI has no request server, so the client is wired
++// to a dead transport: only file:// and data: subresources load; http(s) is not fetched.
++ErrorOr<NonnullRefPtr<Requests::RequestClient>> create_request_client();
++
++}
 diff --git a/vcpkg.json b/vcpkg.json
 index fe21547b77..e0eed7de99 100644
 --- a/vcpkg.json

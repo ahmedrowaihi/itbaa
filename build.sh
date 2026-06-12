@@ -109,6 +109,9 @@ fi
 EXTRA_CMAKE_ARGS=()
 if [ "$(uname)" = "Darwin" ]; then
     EXTRA_CMAKE_ARGS+=(-DCMAKE_EXE_LINKER_FLAGS="-Wl,-ld_classic" -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-ld_classic" -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-ld_classic")
+else
+    # CPU-only render: disable Vulkan so LibGfx doesn't require system libdrm under vcpkg.
+    EXTRA_CMAKE_ARGS+=(-DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON -DCMAKE_DISABLE_FIND_PACKAGE_VulkanHeaders=ON)
 fi
 
 cmake --preset "$PRESET" "${EXTRA_CMAKE_ARGS[@]}"
