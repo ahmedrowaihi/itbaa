@@ -19,6 +19,12 @@ jobs:
     name: ${{ matrix.variant.name }} ${{ matrix.target.os }}-${{ matrix.target.arch }}
     runs-on: ${{ matrix.target.runner }}
 
+    # Point vcpkg at the cached binary dir so built dependencies persist across runs. Without this
+    # vcpkg writes to its default ~/.cache/vcpkg (uncached) and every run rebuilds all deps in Configure.
+    env:
+      LADYBIRD_SOURCE_DIR: ${{ github.workspace }}/ladybird
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/ladybird/Build/caches/vcpkg-binary-cache,readwrite"
+
     strategy:
       fail-fast: false # vanilla and arabic fail independently; ship whatever is green
       matrix:
