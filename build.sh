@@ -92,6 +92,18 @@ if [ "$CLEAN_BUILD" = true ] && [ -d "$BUILD_DIR" ]; then
     rm -rf "$BUILD_DIR"
 fi
 
+# macOS: mainline llvm clang rejects the SDK's CF_ENUM macro (-Welaborated-enum-base)
+# in CoreFoundation-including vcpkg ports (e.g. libproxy). Apple's own clang exempts it.
+# This hook is read by Ladybird's vcpkg base triplet for dependency builds.
+if [ "$(uname)" = "Darwin" ]; then
+    cat > "$SCRIPT_DIR/ladybird/Meta/CMake/vcpkg/user-variables.cmake" <<'CMK'
+if (APPLE)
+    set(VCPKG_C_FLAGS "${VCPKG_C_FLAGS} -Wno-elaborated-enum-base")
+    set(VCPKG_CXX_FLAGS "${VCPKG_CXX_FLAGS} -Wno-elaborated-enum-base")
+endif()
+CMK
+fi
+
 cmake --preset "$PRESET"
 
 # Build

@@ -33,7 +33,7 @@ index 2fc895a32a..ab4c984667 100644
    ],
    "testPresets": [
 diff --git a/Meta/CMake/presets/CMakeUnixPresets.json b/Meta/CMake/presets/CMakeUnixPresets.json
-index ea7d9039a7..489a158d67 100644
+index ea7d9039a7..161666f5a5 100644
 --- a/Meta/CMake/presets/CMakeUnixPresets.json
 +++ b/Meta/CMake/presets/CMakeUnixPresets.json
 @@ -55,6 +55,32 @@
@@ -46,7 +46,7 @@ index ea7d9039a7..489a158d67 100644
 +      "inherits": "unix_base",
 +      "displayName": "Itbaa (اطبع) Build",
 +      "description": "Itbaa - HTML to PDF conversion library and CLI",
-+      "binaryDir": "${fileDir}/Build/itbaa",
++      "binaryDir": "$env{LADYBIRD_SOURCE_DIR}/Build/itbaa",
 +      "cacheVariables": {
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
@@ -58,13 +58,13 @@ index ea7d9039a7..489a158d67 100644
 +      "inherits": "unix_base",
 +      "displayName": "Itbaa (اطبع) Static Build",
 +      "description": "Itbaa - Static distribution build",
-+      "binaryDir": "${fileDir}/Build/itbaa-static",
++      "binaryDir": "$env{LADYBIRD_SOURCE_DIR}/Build/itbaa-static",
 +      "cacheVariables": {
 +        "BUILD_SHARED_LIBS": "OFF",
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
 +        "ENABLE_GUI_TARGETS": "ON",
-+        "VCPKG_OVERLAY_TRIPLETS": "${fileDir}/Meta/CMake/vcpkg/distribution-triplets"
++        "VCPKG_OVERLAY_TRIPLETS": "$env{LADYBIRD_SOURCE_DIR}/Meta/CMake/vcpkg/distribution-triplets"
 +      }
      }
    ],

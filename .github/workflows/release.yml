@@ -61,6 +61,18 @@ jobs:
           cd ladybird
           git apply ../patches/*.patch
 
+      # mainline llvm clang rejects the macOS SDK's CF_ENUM macro in CoreFoundation-including
+      # vcpkg ports (e.g. libproxy); Apple's clang exempts it. Suppress for dependency builds.
+      - name: Suppress -Welaborated-enum-base for vcpkg (macOS)
+        if: matrix.target.os == 'macos'
+        run: |
+          cat > ladybird/Meta/CMake/vcpkg/user-variables.cmake <<'CMK'
+          if (APPLE)
+              set(VCPKG_C_FLAGS "${VCPKG_C_FLAGS} -Wno-elaborated-enum-base")
+              set(VCPKG_CXX_FLAGS "${VCPKG_CXX_FLAGS} -Wno-elaborated-enum-base")
+          endif()
+          CMK
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
