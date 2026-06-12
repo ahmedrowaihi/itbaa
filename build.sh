@@ -5,12 +5,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LADYBIRD_COMMIT=$(cat "$SCRIPT_DIR/LADYBIRD_COMMIT" 2>/dev/null | head -1)
 
 # Parse arguments
 STATIC_BUILD=false
 CLEAN_BUILD=false
 SKIP_CLONE=false
+VARIANT=arabic
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -26,12 +26,23 @@ while [[ $# -gt 0 ]]; do
             SKIP_CLONE=true
             shift
             ;;
+        --variant)
+            VARIANT="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
+            echo "Usage: build.sh [--variant arabic|vanilla] [--static] [--clean] [--skip-clone]"
             exit 1
             ;;
     esac
 done
+
+case "$VARIANT" in
+    vanilla) LADYBIRD_REPO="https://github.com/LadybirdBrowser/ladybird.git";    LADYBIRD_REF="master"   ;;
+    arabic)  LADYBIRD_REPO="https://github.com/ahmedrowaihi/ladybird-itbaa.git"; LADYBIRD_REF="upstream" ;;
+    *)       echo "Unknown variant: $VARIANT (expected 'arabic' or 'vanilla')"; exit 1 ;;
+esac
 
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║           Itbaa (اطبع) - HTML to PDF Converter               ║"
@@ -42,13 +53,8 @@ echo ""
 # Clone or update Ladybird
 if [ "$SKIP_CLONE" = false ]; then
     if [ ! -d "$SCRIPT_DIR/ladybird" ]; then
-        echo "📥 Cloning Ladybird..."
-        git clone --depth 1 https://github.com/LadybirdBrowser/ladybird.git "$SCRIPT_DIR/ladybird"
-        cd "$SCRIPT_DIR/ladybird"
-        if [ -n "$LADYBIRD_COMMIT" ]; then
-            git fetch --depth 1 origin "$LADYBIRD_COMMIT"
-            git checkout "$LADYBIRD_COMMIT"
-        fi
+        echo "📥 Cloning Ladybird ($VARIANT: $LADYBIRD_REPO @ $LADYBIRD_REF)..."
+        git clone --depth 1 --branch "$LADYBIRD_REF" "$LADYBIRD_REPO" "$SCRIPT_DIR/ladybird"
     else
         echo "📂 Ladybird directory exists"
     fi

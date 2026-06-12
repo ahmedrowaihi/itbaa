@@ -1,8 +1,8 @@
 diff --git a/.gitignore b/.gitignore
-index 40e75a3e05..41a7c8a6cf 100644
+index 8ff9ab1bfd..9d29f6ebaf 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -63,3 +63,4 @@ Meta/CMake/vcpkg/user-variables.cmake
+@@ -64,3 +64,4 @@ Meta/CMake/vcpkg/user-variables.cmake
  .DS_Store
  
  __pycache__
@@ -70,12 +70,12 @@ index ea7d9039a7..489a158d67 100644
    ],
    "buildPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index 0cf3746f19..35fc5583c4 100644
+index caa5dadebd..bb3f3ab03e 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
-@@ -22,6 +22,62 @@ endif()
- 
- lagom_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSystem LibGC)
+@@ -21,6 +21,62 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
+ ladybird_utility(dump-html-tokens SOURCES dump-html-tokens.cpp LIBS LibMain LibWeb)
+ ladybird_utility(dump-html-tree SOURCES dump-html-tree.cpp LIBS LibMain LibWeb LibJS LibGC LibGfx LibIPC LibURL)
  
 +# ============================================================================
 +# Itbaa (اطبع) - HTML to PDF Library and CLI
@@ -91,16 +91,16 @@ index 0cf3746f19..35fc5583c4 100644
 +    Itbaa/lib/DisplayListPlayerPDF.cpp
 +)
 +
-+target_include_directories(itbaa PUBLIC 
++target_include_directories(itbaa PUBLIC
 +    ${CMAKE_CURRENT_SOURCE_DIR}/Itbaa/lib
 +    ${CMAKE_SOURCE_DIR}
 +    ${CMAKE_BINARY_DIR}/Lagom/Libraries
 +)
 +
 +target_link_libraries(itbaa PUBLIC
-+    LibWeb 
-+    LibGfx 
-+    LibCore 
++    LibWeb
++    LibGfx
++    LibCore
 +    LibJS
 +    LibGC
 +    LibIPC
@@ -117,15 +117,15 @@ index 0cf3746f19..35fc5583c4 100644
 +)
 +
 +# Itbaa CLI Tool
-+lagom_utility(itbaa-cli
-+    SOURCES 
++ladybird_utility(itbaa-cli
++    SOURCES
 +        Itbaa/cli/main.cpp
-+    LIBS 
++    LIBS
 +        itbaa
 +        LibMain
 +)
 +
-+target_include_directories(itbaa-cli PRIVATE 
++target_include_directories(itbaa-cli PRIVATE
 +    ${CMAKE_CURRENT_SOURCE_DIR}/Itbaa/lib
 +)
 +
@@ -136,7 +136,7 @@ index 0cf3746f19..35fc5583c4 100644
  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      include(CheckCSourceCompiles)
      # Check for musl's declaration of __assert_fail
-@@ -61,10 +117,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -60,10 +116,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
      install(TARGETS wasm COMPONENT wasm)
      install(FILES "${GIT_COMMIT_FILE}" COMPONENT wasm DESTINATION .)
  
@@ -154,7 +154,7 @@ index 0cf3746f19..35fc5583c4 100644
      set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
      if (APPLE)
          if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES AND "x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-@@ -78,6 +140,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -77,6 +139,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
  
      set(CPACK_ARCHIVE_JS_FILE_NAME "ladybird-js-${CPACK_SYSTEM_NAME}")
      set(CPACK_ARCHIVE_WASM_FILE_NAME "ladybird-wasm-${CPACK_SYSTEM_NAME}")
@@ -1438,10 +1438,10 @@ index 0000000000..3fda3f6c02
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..d4cdebae5c
+index 0000000000..e773800b80
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,349 @@
+@@ -0,0 +1,347 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1472,9 +1472,7 @@ index 0000000000..d4cdebae5c
 +#include <LibWeb/Painting/DisplayList.h>
 +#include <LibWeb/Painting/ViewportPaintable.h>
 +#include <LibWeb/Platform/EventLoopPlugin.h>
-+#include <LibWeb/Platform/EventLoopPluginSerenity.h>
 +#include <LibWeb/Platform/FontPlugin.h>
-+#include <LibWebView/Plugins/FontPlugin.h>
 +
 +#include <core/SkCanvas.h>
 +#include <core/SkPicture.h>
@@ -1683,7 +1681,7 @@ index 0000000000..d4cdebae5c
 +
 +    s_event_loop = make<Core::EventLoop>();
 +
-+    Web::Platform::EventLoopPlugin::install(*new Web::Platform::EventLoopPluginSerenity);
++    Web::Platform::EventLoopPlugin::install(*new Web::Platform::EventLoopPlugin);
 +    Web::Bindings::initialize_main_thread_vm(Web::Bindings::AgentType::SimilarOriginWindow);
 +
 +    auto& vm = Web::Bindings::main_thread_vm();
@@ -1691,7 +1689,7 @@ index 0000000000..d4cdebae5c
 +    auto& font_provider = static_cast<Gfx::PathFontProvider&>(
 +        Gfx::FontDatabase::the().install_system_font_provider(make<Gfx::PathFontProvider>()));
 +    font_provider.load_all_fonts_from_uri("resource://fonts"sv);
-+    Web::Platform::FontPlugin::install(*new WebView::FontPlugin(false, &font_provider));
++    Web::Platform::FontPlugin::install(*new Web::Platform::FontPlugin(false, &font_provider));
 +
 +    int socket_fds[2] {};
 +    TRY(Core::System::socketpair(AF_LOCAL, SOCK_STREAM, 0, socket_fds));
@@ -1880,10 +1878,10 @@ index 0000000000..afb8296b82
 +
 +} // namespace Itbaa
 diff --git a/vcpkg.json b/vcpkg.json
-index d4a1b5a5ea..f4774ab999 100644
+index fe21547b77..e0eed7de99 100644
 --- a/vcpkg.json
 +++ b/vcpkg.json
-@@ -178,7 +178,8 @@
+@@ -139,7 +139,8 @@
          "metal",
          "fontconfig",
          "harfbuzz",
@@ -1893,7 +1891,7 @@ index d4a1b5a5ea..f4774ab999 100644
        ]
      },
      {
-@@ -189,6 +190,7 @@
+@@ -150,6 +151,7 @@
          "freetype",
          "harfbuzz",
          "icu",
@@ -1901,7 +1899,7 @@ index d4a1b5a5ea..f4774ab999 100644
          "vulkan"
        ]
      },
-@@ -201,6 +203,7 @@
+@@ -162,6 +164,7 @@
          "fontconfig",
          "harfbuzz",
          "icu",
@@ -1909,10 +1907,10 @@ index d4a1b5a5ea..f4774ab999 100644
          "vulkan"
        ]
      },
-@@ -222,7 +225,11 @@
-     "vulkan",
+@@ -184,7 +187,11 @@
      "vulkan-headers",
      "woff2",
+     "wuffs",
 -    "zlib"
 +    "zlib",
 +    {
@@ -1920,5 +1918,5 @@ index d4a1b5a5ea..f4774ab999 100644
 +      "platform": "osx | linux | windows"
 +    }
    ],
-   "overrides": [
-     {
+   "features": {
+     "gtk": {
