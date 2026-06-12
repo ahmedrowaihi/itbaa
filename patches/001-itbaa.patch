@@ -356,10 +356,10 @@ index 0000000000..8a973d4176
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
 new file mode 100644
-index 0000000000..1e5ecbd2ea
+index 0000000000..10730bb58b
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,272 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -375,17 +375,20 @@ index 0000000000..1e5ecbd2ea
 +#include <core/SkPaint.h>
 +#include <core/SkPath.h>
 +#include <core/SkRRect.h>
++#include <core/SkTextBlob.h>
 +#include <effects/SkDashPathEffect.h>
 +
 +#include <LibGfx/Font/Font.h>
-+#include <LibGfx/ImmutableBitmap.h>
 +#include <LibGfx/PathSkia.h>
 +#include <LibGfx/SkiaUtils.h>
 +#include <LibWeb/Painting/DisplayListCommand.h>
++#include <LibWeb/Painting/DisplayListResourceStorage.h>
 +
 +namespace Itbaa {
 +
-+static SkRRect to_skia_rrect(auto const& rect, Web::Painting::CornerRadii const& corner_radii)
++using namespace Web::Painting;
++
++static SkRRect to_skia_rrect(auto const& rect, Gfx::CornerRadii const& corner_radii)
 +{
 +    SkRRect rrect;
 +    SkVector radii[4];
@@ -393,7 +396,7 @@ index 0000000000..1e5ecbd2ea
 +    radii[1].set(corner_radii.top_right.horizontal_radius, corner_radii.top_right.vertical_radius);
 +    radii[2].set(corner_radii.bottom_right.horizontal_radius, corner_radii.bottom_right.vertical_radius);
 +    radii[3].set(corner_radii.bottom_left.horizontal_radius, corner_radii.bottom_left.vertical_radius);
-+    rrect.setRectRadii(to_skia_rect(rect), radii);
++    rrect.setRectRadii(Gfx::to_skia_rect(rect), radii);
 +    return rrect;
 +}
 +
@@ -406,277 +409,235 @@ index 0000000000..1e5ecbd2ea
 +        matrix.elements()[3][0], matrix.elements()[3][1], matrix.elements()[3][2], matrix.elements()[3][3]);
 +}
 +
-+DisplayListPlayerPDF::DisplayListPlayerPDF(SkCanvas& canvas)
-+    : m_canvas(canvas)
++Gfx::Path DisplayListPlayerPDF::path_from_data(DisplayListDataSpan path_data) const
 +{
++    return Gfx::Path::from_serialized_bytes(inline_data(path_data));
 +}
 +
-+void DisplayListPlayerPDF::execute(Web::Painting::DisplayList& display_list)
++void DisplayListPlayerPDF::draw_glyph_run(DrawGlyphRun const& command)
 +{
-+    using namespace Web::Painting;
++    auto const& font = resource_storage().font(command.font_id);
++    auto glyphs = inline_objects<DisplayListGlyph>(command.glyphs);
++    if (glyphs.is_empty())
++        return;
 +
-+    for (auto const& command_with_scroll : display_list.commands()) {
-+        auto const& command = command_with_scroll.command;
++    auto sk_font = font.skia_font(command.scale);
++    SkTextBlobBuilder builder;
++    auto const& run = builder.allocRunPos(sk_font, glyphs.size());
 +
-+        command.visit(
-+            [&](DrawGlyphRun const& cmd) { draw_glyph_run(cmd); },
-+            [&](FillRect const& cmd) { fill_rect(cmd); },
-+            [&](DrawScaledImmutableBitmap const& cmd) { draw_scaled_immutable_bitmap(cmd); },
-+            [&](AddClipRect const& cmd) { add_clip_rect(cmd); },
-+            [&](Save const&) { save(); },
-+            [&](SaveLayer const&) { save_layer(); },
-+            [&](Restore const&) { restore(); },
-+            [&](Translate const& cmd) { translate(cmd); },
-+            [&](PushStackingContext const& cmd) { push_stacking_context(cmd); },
-+            [&](PopStackingContext const&) { pop_stacking_context(); },
-+            [&](FillRectWithRoundedCorners const& cmd) { fill_rect_with_rounded_corners(cmd); },
-+            [&](FillPath const& cmd) { fill_path(cmd); },
-+            [&](StrokePath const& cmd) { stroke_path(cmd); },
-+            [&](DrawEllipse const& cmd) { draw_ellipse(cmd); },
-+            [&](FillEllipse const& cmd) { fill_ellipse(cmd); },
-+            [&](DrawLine const& cmd) { draw_line(cmd); },
-+            [&](DrawRect const& cmd) { draw_rect(cmd); },
-+            [&](AddRoundedRectClip const& cmd) { add_rounded_rect_clip(cmd); },
-+            [&](ApplyOpacity const& cmd) { apply_opacity(cmd); },
-+            [&](ApplyTransform const& cmd) { apply_transform(cmd); },
-+            [&](auto const&) { /* Skip unsupported commands */ });
++    auto font_ascent = font.pixel_metrics().ascent;
++    for (size_t i = 0; i < glyphs.size(); ++i) {
++        run.glyphs[i] = glyphs[i].glyph_id;
++        run.pos[i * 2] = glyphs[i].position.x() * command.scale;
++        run.pos[i * 2 + 1] = (glyphs[i].position.y() + font_ascent) * command.scale;
 +    }
-+}
 +
-+void DisplayListPlayerPDF::draw_glyph_run(Web::Painting::DrawGlyphRun const& command)
-+{
-+    auto const& gfx_font = command.glyph_run->font();
-+    auto sk_font = gfx_font.skia_font(command.scale);
-+
-+    auto glyph_count = command.glyph_run->glyphs().size();
-+    Vector<SkGlyphID> glyphs;
-+    glyphs.ensure_capacity(glyph_count);
-+    Vector<SkPoint> positions;
-+    positions.ensure_capacity(glyph_count);
-+    auto font_ascent = gfx_font.pixel_metrics().ascent;
-+
-+    for (auto const& glyph : command.glyph_run->glyphs()) {
-+        auto transformed_glyph = glyph;
-+        transformed_glyph.position.set_y(glyph.position.y() + font_ascent);
-+        transformed_glyph.position = transformed_glyph.position.scaled(command.scale);
-+        auto const& point = transformed_glyph.position;
-+        glyphs.append(transformed_glyph.glyph_id);
-+        positions.append(to_skia_point(point));
-+    }
++    auto blob = builder.make();
++    if (!blob)
++        return;
 +
 +    SkPaint paint;
-+    paint.setColor(to_skia_color(command.color));
++    paint.setColor(Gfx::to_skia_color(command.color));
++    auto const& translation = command.translation;
 +
 +    switch (command.orientation) {
 +    case Gfx::Orientation::Horizontal:
-+        canvas().drawGlyphs(glyphs.size(), glyphs.data(), positions.data(), to_skia_point(command.translation), sk_font, paint);
++        canvas().drawTextBlob(blob.get(), translation.x(), translation.y(), paint);
 +        break;
 +    case Gfx::Orientation::Vertical:
 +        canvas().save();
 +        canvas().translate(command.rect.width(), 0);
 +        canvas().rotate(90, command.rect.top_left().x(), command.rect.top_left().y());
-+        canvas().drawGlyphs(glyphs.size(), glyphs.data(), positions.data(), to_skia_point(command.translation), sk_font, paint);
++        canvas().drawTextBlob(blob.get(), translation.x(), translation.y(), paint);
 +        canvas().restore();
 +        break;
 +    }
 +}
 +
-+void DisplayListPlayerPDF::fill_rect(Web::Painting::FillRect const& command)
++void DisplayListPlayerPDF::fill_rect(FillRect const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawRect(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawRect(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_scaled_immutable_bitmap(Web::Painting::DrawScaledImmutableBitmap const& command)
++void DisplayListPlayerPDF::draw_scaled_decoded_image_frame(DrawScaledDecodedImageFrame const& command)
 +{
-+    auto dst_rect = to_skia_rect(command.dst_rect);
-+    auto clip_rect = to_skia_rect(command.clip_rect);
++    auto const& frame = resource_storage().image_frame(command.frame_id);
++    auto image = m_image_cache.image_for_frame(frame);
++    if (!image)
++        return;
++
++    auto dst_rect = Gfx::to_skia_rect(command.dst_rect);
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    canvas().save();
-+    canvas().clipRect(clip_rect, true);
-+    canvas().drawImageRect(command.bitmap->sk_image(), dst_rect, to_skia_sampling_options(command.scaling_mode), &paint);
++    canvas().clipRect(dst_rect, true);
++    canvas().drawImageRect(image.get(), dst_rect, Gfx::to_skia_sampling_options(command.scaling_mode), &paint);
 +    canvas().restore();
 +}
 +
-+void DisplayListPlayerPDF::add_clip_rect(Web::Painting::AddClipRect const& command)
++void DisplayListPlayerPDF::draw_repeated_decoded_image_frame(DrawRepeatedDecodedImageFrame const& command)
 +{
-+    canvas().clipRect(to_skia_rect(command.rect), true);
++    auto const& frame = resource_storage().image_frame(command.frame_id);
++    auto image = m_image_cache.image_for_frame(frame);
++    if (!image)
++        return;
++
++    auto dst_rect = Gfx::to_skia_rect(command.dst_rect);
++    SkPaint paint;
++    paint.setAntiAlias(true);
++    canvas().save();
++    canvas().clipRect(Gfx::to_skia_rect(command.clip_rect), true);
++    canvas().drawImageRect(image.get(), dst_rect, Gfx::to_skia_sampling_options(command.scaling_mode), &paint);
++    canvas().restore();
 +}
 +
-+void DisplayListPlayerPDF::save()
++void DisplayListPlayerPDF::save(Save const&)
 +{
 +    canvas().save();
 +}
 +
-+void DisplayListPlayerPDF::save_layer()
++void DisplayListPlayerPDF::save_layer(SaveLayer const&)
 +{
 +    canvas().saveLayer(nullptr, nullptr);
 +}
 +
-+void DisplayListPlayerPDF::restore()
++void DisplayListPlayerPDF::restore(Restore const&)
 +{
 +    canvas().restore();
 +}
 +
-+void DisplayListPlayerPDF::translate(Web::Painting::Translate const& command)
++void DisplayListPlayerPDF::translate(Translate const& command)
 +{
 +    canvas().translate(command.delta.x(), command.delta.y());
 +}
 +
-+void DisplayListPlayerPDF::push_stacking_context(Web::Painting::PushStackingContext const& command)
++void DisplayListPlayerPDF::add_clip_rect(AddClipRect const& command)
 +{
-+    auto new_transform = Gfx::translation_matrix(Gfx::Vector3<float>(command.transform.origin.x(), command.transform.origin.y(), 0));
-+    new_transform = new_transform * command.transform.matrix;
-+    new_transform = new_transform * Gfx::translation_matrix(Gfx::Vector3<float>(-command.transform.origin.x(), -command.transform.origin.y(), 0));
-+    if (command.transform.parent_perspective_matrix.has_value())
-+        new_transform = command.transform.parent_perspective_matrix.value() * new_transform;
-+    auto matrix = to_skia_matrix4x4(new_transform);
-+
-+    canvas().save();
-+    if (command.clip_path.has_value())
-+        canvas().clipPath(to_skia_path(command.clip_path.value()), true);
-+    canvas().concat(matrix);
-+
-+    if (command.opacity < 1 || command.compositing_and_blending_operator != Gfx::CompositingAndBlendingOperator::Normal || command.isolate) {
-+        SkPaint paint;
-+        paint.setAlphaf(command.opacity);
-+        paint.setBlender(Gfx::to_skia_blender(command.compositing_and_blending_operator));
-+        if (command.bounding_rect.has_value()) {
-+            auto bounds = to_skia_rect(command.bounding_rect.value());
-+            canvas().saveLayer(bounds, &paint);
-+        } else {
-+            canvas().saveLayer(nullptr, &paint);
-+        }
-+    } else {
-+        canvas().save();
-+    }
++    canvas().clipRect(Gfx::to_skia_rect(command.rect), true);
 +}
 +
-+void DisplayListPlayerPDF::pop_stacking_context()
++void DisplayListPlayerPDF::fill_rect_with_rounded_corners(FillRectWithRoundedCorners const& command)
 +{
-+    canvas().restore();
-+    canvas().restore();
-+}
-+
-+void DisplayListPlayerPDF::fill_rect_with_rounded_corners(Web::Painting::FillRectWithRoundedCorners const& command)
-+{
-+    auto rounded_rect = to_skia_rrect(command.rect, command.corner_radii);
 +    SkPaint paint;
-+    paint.setColor(to_skia_color(command.color));
++    paint.setColor(Gfx::to_skia_color(command.color));
 +    paint.setAntiAlias(true);
-+    canvas().drawRRect(rounded_rect, paint);
++    canvas().drawRRect(to_skia_rrect(command.rect, command.corner_radii), paint);
 +}
 +
-+void DisplayListPlayerPDF::fill_path(Web::Painting::FillPath const& command)
++void DisplayListPlayerPDF::fill_path(FillPath const& command)
 +{
-+    auto path = to_skia_path(command.path);
++    auto path = Gfx::to_skia_path(path_from_data(command.path_data));
 +    path.setFillType(to_skia_path_fill_type(command.winding_rule));
 +
 +    SkPaint paint;
-+    if (command.paint_style_or_color.has<Web::Painting::PaintStyle>()) {
-+        // Simplified: just use a solid color for PDF
++    if (command.paint_kind == PathPaintKind::PaintStyle) {
++        // PDF backend doesn't resolve gradients/patterns; approximate with solid black.
 +        paint.setColor(SK_ColorBLACK);
 +        paint.setAlphaf(command.opacity);
 +    } else {
-+        auto const& color = command.paint_style_or_color.get<Gfx::Color>();
-+        paint.setColor(to_skia_color(color));
++        paint.setColor(Gfx::to_skia_color(command.color));
 +    }
-+    paint.setAntiAlias(command.should_anti_alias == Web::Painting::ShouldAntiAlias::Yes);
++    paint.setAntiAlias(command.should_anti_alias == Gfx::ShouldAntiAlias::Yes);
 +    canvas().drawPath(path, paint);
 +}
 +
-+void DisplayListPlayerPDF::stroke_path(Web::Painting::StrokePath const& command)
++void DisplayListPlayerPDF::stroke_path(StrokePath const& command)
 +{
-+    auto path = to_skia_path(command.path);
++    auto path = Gfx::to_skia_path(path_from_data(command.path_data));
 +    SkPaint paint;
-+    if (command.paint_style_or_color.has<Web::Painting::PaintStyle>()) {
++    if (command.paint_kind == PathPaintKind::PaintStyle) {
 +        paint.setColor(SK_ColorBLACK);
 +        paint.setAlphaf(command.opacity);
 +    } else {
-+        auto const& color = command.paint_style_or_color.get<Gfx::Color>();
-+        paint.setColor(to_skia_color(color));
++        paint.setColor(Gfx::to_skia_color(command.color));
 +    }
-+    paint.setAntiAlias(command.should_anti_alias == Web::Painting::ShouldAntiAlias::Yes);
++    paint.setAntiAlias(command.should_anti_alias == Gfx::ShouldAntiAlias::Yes);
 +    paint.setStyle(SkPaint::Style::kStroke_Style);
 +    paint.setStrokeWidth(command.thickness);
 +    paint.setStrokeCap(to_skia_cap(command.cap_style));
 +    paint.setStrokeJoin(to_skia_join(command.join_style));
 +    paint.setStrokeMiter(command.miter_limit);
-+    if (!command.dash_array.is_empty())
-+        paint.setPathEffect(SkDashPathEffect::Make(command.dash_array.data(), command.dash_array.size(), command.dash_offset));
++    auto dash_array = inline_objects<float>(command.dash_array);
++    if (!dash_array.is_empty())
++        paint.setPathEffect(SkDashPathEffect::Make(dash_array.data(), dash_array.size(), command.dash_offset));
 +    canvas().drawPath(path, paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_ellipse(Web::Painting::DrawEllipse const& command)
++void DisplayListPlayerPDF::draw_ellipse(DrawEllipse const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    paint.setStyle(SkPaint::kStroke_Style);
 +    paint.setStrokeWidth(command.thickness);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawOval(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawOval(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::fill_ellipse(Web::Painting::FillEllipse const& command)
++void DisplayListPlayerPDF::fill_ellipse(FillEllipse const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawOval(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawOval(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_line(Web::Painting::DrawLine const& command)
++void DisplayListPlayerPDF::draw_line(DrawLine const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    paint.setStyle(SkPaint::kStroke_Style);
 +    paint.setStrokeWidth(command.thickness);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawLine(to_skia_point(command.from.to_type<float>()), to_skia_point(command.to.to_type<float>()), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawLine(Gfx::to_skia_point(command.from.to_type<float>()), Gfx::to_skia_point(command.to.to_type<float>()), paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_rect(Web::Painting::DrawRect const& command)
++void DisplayListPlayerPDF::draw_rect(DrawRect const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    paint.setStyle(SkPaint::kStroke_Style);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawRect(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawRect(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::add_rounded_rect_clip(Web::Painting::AddRoundedRectClip const& command)
++void DisplayListPlayerPDF::add_rounded_rect_clip(AddRoundedRectClip const& command)
 +{
 +    auto rounded_rect = to_skia_rrect(command.border_rect, command.corner_radii);
-+    auto clip_op = command.corner_clip == Web::Painting::CornerClip::Inside ? SkClipOp::kDifference : SkClipOp::kIntersect;
++    auto clip_op = command.corner_clip == Gfx::CornerClip::Inside ? SkClipOp::kDifference : SkClipOp::kIntersect;
 +    canvas().clipRRect(rounded_rect, clip_op, true);
 +}
 +
-+void DisplayListPlayerPDF::apply_opacity(Web::Painting::ApplyOpacity const& command)
++void DisplayListPlayerPDF::add_clip_path(Gfx::Path const& clip_path)
++{
++    canvas().clipPath(Gfx::to_skia_path(clip_path), true);
++}
++
++void DisplayListPlayerPDF::apply_effects(ApplyEffects const& command, Gfx::Filter const*)
 +{
 +    SkPaint paint;
 +    paint.setAlphaf(command.opacity);
++    paint.setBlender(Gfx::to_skia_blender(command.compositing_and_blending_operator));
 +    canvas().saveLayer(nullptr, &paint);
 +}
 +
-+void DisplayListPlayerPDF::apply_transform(Web::Painting::ApplyTransform const& command)
++void DisplayListPlayerPDF::apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 const& matrix)
 +{
-+    auto new_transform = Gfx::translation_matrix(Gfx::Vector3<float>(command.origin.x(), command.origin.y(), 0));
-+    new_transform = new_transform * command.matrix;
-+    new_transform = new_transform * Gfx::translation_matrix(Gfx::Vector3<float>(-command.origin.x(), -command.origin.y(), 0));
-+    auto matrix = to_skia_matrix4x4(new_transform);
-+    canvas().concat(matrix);
++    auto new_transform = Gfx::translation_matrix(Gfx::Vector3<float>(origin.x(), origin.y(), 0));
++    new_transform = new_transform * matrix;
++    new_transform = new_transform * Gfx::translation_matrix(Gfx::Vector3<float>(-origin.x(), -origin.y(), 0));
++    canvas().concat(to_skia_matrix4x4(new_transform));
 +}
 +
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.h b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
 new file mode 100644
-index 0000000000..da2efc9a5c
+index 0000000000..f95f282682
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,82 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -685,7 +646,9 @@ index 0000000000..da2efc9a5c
 +
 +#pragma once
 +
++#include <LibGfx/DecodedImageFrameSkiaImageCache.h>
 +#include <LibGfx/Forward.h>
++#include <LibGfx/Path.h>
 +#include <LibWeb/Painting/DisplayList.h>
 +#include <LibWeb/Painting/DisplayListCommand.h>
 +
@@ -693,38 +656,67 @@ index 0000000000..da2efc9a5c
 +
 +namespace Itbaa {
 +
-+class DisplayListPlayerPDF {
++// Renders a recorded DisplayList directly onto an SkPDF page canvas (vector PDF
++// output): implements the LibWeb DisplayListPlayer interface but draws to its
++// own SkCanvas instead of a Gfx::PaintingSurface. Drawing ops are mirrored from
++// DisplayListPlayerSkia; commands with no PDF meaning (compositor, video,
++// gradients, shadows) are no-ops.
++class DisplayListPlayerPDF final : public Web::Painting::DisplayListPlayer {
 +public:
-+    DisplayListPlayerPDF(SkCanvas& canvas);
-+    ~DisplayListPlayerPDF() = default;
++    explicit DisplayListPlayerPDF(SkCanvas& canvas)
++        : m_canvas(canvas)
++    {
++    }
++    virtual ~DisplayListPlayerPDF() override = default;
 +
-+    void execute(Web::Painting::DisplayList&);
++    virtual void flush(Gfx::PaintingSurface&) override { }
 +
 +private:
 +    SkCanvas& canvas() { return m_canvas; }
++    Gfx::Path path_from_data(Web::Painting::DisplayListDataSpan) const;
 +
-+    void draw_glyph_run(Web::Painting::DrawGlyphRun const&);
-+    void fill_rect(Web::Painting::FillRect const&);
-+    void draw_scaled_immutable_bitmap(Web::Painting::DrawScaledImmutableBitmap const&);
-+    void add_clip_rect(Web::Painting::AddClipRect const&);
-+    void save();
-+    void save_layer();
-+    void restore();
-+    void translate(Web::Painting::Translate const&);
-+    void push_stacking_context(Web::Painting::PushStackingContext const&);
-+    void pop_stacking_context();
-+    void fill_rect_with_rounded_corners(Web::Painting::FillRectWithRoundedCorners const&);
-+    void fill_path(Web::Painting::FillPath const&);
-+    void stroke_path(Web::Painting::StrokePath const&);
-+    void draw_ellipse(Web::Painting::DrawEllipse const&);
-+    void fill_ellipse(Web::Painting::FillEllipse const&);
-+    void draw_line(Web::Painting::DrawLine const&);
-+    void draw_rect(Web::Painting::DrawRect const&);
-+    void add_rounded_rect_clip(Web::Painting::AddRoundedRectClip const&);
-+    void apply_opacity(Web::Painting::ApplyOpacity const&);
-+    void apply_transform(Web::Painting::ApplyTransform const&);
++    virtual void draw_glyph_run(Web::Painting::DrawGlyphRun const&) override;
++    virtual void fill_rect(Web::Painting::FillRect const&) override;
++    virtual void draw_scaled_decoded_image_frame(Web::Painting::DrawScaledDecodedImageFrame const&) override;
++    virtual void draw_repeated_decoded_image_frame(Web::Painting::DrawRepeatedDecodedImageFrame const&) override;
++    virtual void draw_compositor_surface(Web::Painting::DrawCompositorSurface const&) override { }
++    virtual void draw_video_frame(Web::Painting::DrawVideoFrame const&) override { }
++    virtual void save(Web::Painting::Save const&) override;
++    virtual void save_layer(Web::Painting::SaveLayer const&) override;
++    virtual void restore(Web::Painting::Restore const&) override;
++    virtual void translate(Web::Painting::Translate const&) override;
++    virtual void add_clip_rect(Web::Painting::AddClipRect const&) override;
++    virtual void paint_linear_gradient(Web::Painting::PaintLinearGradient const&) override { }
++    virtual void paint_radial_gradient(Web::Painting::PaintRadialGradient const&) override { }
++    virtual void paint_conic_gradient(Web::Painting::PaintConicGradient const&) override { }
++    virtual void paint_outer_box_shadow(Web::Painting::PaintOuterBoxShadow const&) override { }
++    virtual void paint_inner_box_shadow(Web::Painting::PaintInnerBoxShadow const&) override { }
++    virtual void paint_text_shadow(Web::Painting::PaintTextShadow const&) override { }
++    virtual void fill_rect_with_rounded_corners(Web::Painting::FillRectWithRoundedCorners const&) override;
++    virtual void fill_path(Web::Painting::FillPath const&) override;
++    virtual void stroke_path(Web::Painting::StrokePath const&) override;
++    virtual void draw_ellipse(Web::Painting::DrawEllipse const&) override;
++    virtual void fill_ellipse(Web::Painting::FillEllipse const&) override;
++    virtual void draw_line(Web::Painting::DrawLine const&) override;
++    virtual void apply_backdrop_filter(Web::Painting::ApplyBackdropFilter const&) override { }
++    virtual void draw_rect(Web::Painting::DrawRect const&) override;
++    virtual void add_rounded_rect_clip(Web::Painting::AddRoundedRectClip const&) override;
++    virtual void paint_nested_display_list(Web::Painting::PaintNestedDisplayList const&) override { }
++    virtual void compositor_scroll_node(Web::Painting::CompositorScrollNode const&) override { }
++    virtual void compositor_sticky_area(Web::Painting::CompositorStickyArea const&) override { }
++    virtual void compositor_wheel_hit_test_target(Web::Painting::CompositorWheelHitTestTarget const&) override { }
++    virtual void compositor_wheel_hit_test_target_with_corner_radii(Web::Painting::CompositorWheelHitTestTargetWithCornerRadii const&) override { }
++    virtual void compositor_main_thread_wheel_event_region(Web::Painting::CompositorMainThreadWheelEventRegion const&) override { }
++    virtual void compositor_viewport_scrollbar(Web::Painting::CompositorViewportScrollbar const&) override { }
++    virtual void compositor_blocking_wheel_event_region(Web::Painting::CompositorBlockingWheelEventRegion const&) override { }
++    virtual void paint_scrollbar(Web::Painting::PaintScrollBar const&) override { }
++    virtual void apply_effects(Web::Painting::ApplyEffects const&, Gfx::Filter const*) override;
++    virtual void apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 const&) override;
++    virtual void add_clip_path(Gfx::Path const&) override;
++    virtual bool would_be_fully_clipped_by_painter(Gfx::IntRect) const override { return false; }
 +
 +    SkCanvas& m_canvas;
++    Gfx::DecodedImageFrameSkiaImageCache m_image_cache;
 +};
 +
 +}
@@ -1438,10 +1430,10 @@ index 0000000000..3fda3f6c02
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..e773800b80
+index 0000000000..164256cb7c
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,347 @@
+@@ -0,0 +1,359 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1457,6 +1449,7 @@ index 0000000000..e773800b80
 +#include <LibCore/System.h>
 +#include <LibGfx/Font/FontDatabase.h>
 +#include <LibGfx/Font/PathFontProvider.h>
++#include <LibGfx/PaintingSurface.h>
 +#include <LibGfx/Palette.h>
 +#include <LibIPC/Transport.h>
 +#include <LibJS/Runtime/VM.h>
@@ -1470,6 +1463,7 @@ index 0000000000..e773800b80
 +#include <LibWeb/Loader/ResourceLoader.h>
 +#include <LibWeb/Page/Page.h>
 +#include <LibWeb/Painting/DisplayList.h>
++#include <LibWeb/Painting/DisplayListResourceStorage.h>
 +#include <LibWeb/Painting/ViewportPaintable.h>
 +#include <LibWeb/Platform/EventLoopPlugin.h>
 +#include <LibWeb/Platform/FontPlugin.h>
@@ -1585,9 +1579,19 @@ index 0000000000..e773800b80
 +            .canvas_fill_rect = Gfx::IntRect { {}, { page_width, total_height } }
 +        };
 +
-+        auto display_list = document->record_display_list(paint_config);
++        Web::Painting::DisplayListResourceStorage resource_storage;
++        auto display_list = document->record_display_list(paint_config, resource_storage);
 +        if (!display_list)
 +            return Error::from_string_literal("Failed to record display list");
++
++        auto document_paintable = document->paintable();
++        if (!document_paintable || !document_paintable->has_visual_context_tree())
++            return Error::from_string_literal("Document has no paintable visual context tree");
++        auto visual_context_tree = document_paintable->visual_context_tree();
++
++        // DisplayListPlayer::execute() requires a PaintingSurface; the PDF player draws to
++        // its own SkCanvas and never reads it, so a 1x1 placeholder is enough.
++        auto placeholder_surface = Gfx::PaintingSurface::create_with_size({ 1, 1 }, Gfx::BitmapFormat::BGRA8888, Gfx::AlphaType::Premultiplied);
 +
 +        int num_pages = (total_height + page_height - 1) / page_height;
 +        Vector<RenderedPage> pages;
@@ -1601,7 +1605,7 @@ index 0000000000..e773800b80
 +            canvas->translate(0, -y_offset);
 +
 +            Itbaa::DisplayListPlayerPDF player(*canvas);
-+            player.execute(*display_list);
++            player.execute(*display_list, visual_context_tree, resource_storage, {}, placeholder_surface);
 +
 +            sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
 +
