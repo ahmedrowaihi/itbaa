@@ -195,6 +195,17 @@ jobs:
         working-directory: ladybird
         run: cmake --build Build --target itbaa-cli
 
+      # Run the freshly-built binary on this native runner: proves it renders, not just links.
+      - name: Smoke test
+        working-directory: ladybird
+        run: |
+          printf '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body dir="rtl"><h1>\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 Hello</h1><p>Arabic \xd9\x88 English</p></body></html>' > smoke.html
+          ./Build/bin/itbaa smoke.html smoke.pdf
+          head -c5 smoke.pdf | grep -q '%PDF' || { echo "::error::output is not a valid PDF"; exit 1; }
+          size=$(wc -c < smoke.pdf)
+          [ "$size" -gt 1000 ] || { echo "::error::PDF suspiciously small ($size bytes) — likely nothing rendered"; exit 1; }
+          echo "✓ Smoke test passed: rendered a ${size}-byte PDF"
+
       - name: Prepare artifact
         env:
           NAME: itbaa-${{ matrix.variant.name }}-${{ matrix.target.os }}-${{ matrix.target.arch }}
