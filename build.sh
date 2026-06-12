@@ -104,7 +104,14 @@ endif()
 CMK
 fi
 
-cmake --preset "$PRESET"
+# macOS: the Rust crate static archives (LibJS/LibGfx/LibURL) aren't 8-byte aligned, which the
+# new ld rejects; the classic linker tolerates them.
+EXTRA_CMAKE_ARGS=()
+if [ "$(uname)" = "Darwin" ]; then
+    EXTRA_CMAKE_ARGS+=(-DCMAKE_EXE_LINKER_FLAGS="-Wl,-ld_classic" -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-ld_classic" -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-ld_classic")
+fi
+
+cmake --preset "$PRESET" "${EXTRA_CMAKE_ARGS[@]}"
 
 # Build
 echo ""

@@ -163,13 +163,17 @@ jobs:
         working-directory: ladybird
         run: |
           if [ "${{ matrix.target.os }}" == "macos" ]; then
+            # Rust crate static archives aren't 8-byte aligned; the new ld rejects them, the classic linker accepts.
             cmake --preset Itbaa_Static -B Build \
               -DCMAKE_C_COMPILER="$CC" \
               -DCMAKE_CXX_COMPILER="$CXX" \
               -DBUILD_TESTING=OFF \
               -DENABLE_CI_BASELINE_CPU=ON \
               -DPython3_EXECUTABLE="${{ env.pythonLocation }}/bin/python" \
-              -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0"
+              -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
+              -DCMAKE_EXE_LINKER_FLAGS="-Wl,-ld_classic" \
+              -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-ld_classic" \
+              -DCMAKE_MODULE_LINKER_FLAGS="-Wl,-ld_classic"
           else
             cmake --preset Itbaa_Static -B Build \
               -DCMAKE_C_COMPILER="$CC" \

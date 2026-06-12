@@ -70,10 +70,10 @@ index ea7d9039a7..161666f5a5 100644
    ],
    "buildPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index caa5dadebd..bb3f3ab03e 100644
+index caa5dadebd..12b7dde0df 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
-@@ -21,6 +21,62 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
+@@ -21,6 +21,61 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
  ladybird_utility(dump-html-tokens SOURCES dump-html-tokens.cpp LIBS LibMain LibWeb)
  ladybird_utility(dump-html-tree SOURCES dump-html-tree.cpp LIBS LibMain LibWeb LibJS LibGC LibGfx LibIPC LibURL)
  
@@ -81,7 +81,6 @@ index caa5dadebd..bb3f3ab03e 100644
 +# Itbaa (اطبع) - HTML to PDF Library and CLI
 +# Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
 +# ============================================================================
-+include(skia)
 +
 +# Itbaa Core Library (static)
 +add_library(itbaa STATIC
@@ -136,7 +135,7 @@ index caa5dadebd..bb3f3ab03e 100644
  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      include(CheckCSourceCompiles)
      # Check for musl's declaration of __assert_fail
-@@ -60,10 +116,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -60,10 +115,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
      install(TARGETS wasm COMPONENT wasm)
      install(FILES "${GIT_COMMIT_FILE}" COMPONENT wasm DESTINATION .)
  
@@ -154,7 +153,7 @@ index caa5dadebd..bb3f3ab03e 100644
      set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
      if (APPLE)
          if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES AND "x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-@@ -77,6 +139,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -77,6 +138,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
  
      set(CPACK_ARCHIVE_JS_FILE_NAME "ladybird-js-${CPACK_SYSTEM_NAME}")
      set(CPACK_ARCHIVE_WASM_FILE_NAME "ladybird-wasm-${CPACK_SYSTEM_NAME}")
@@ -356,10 +355,10 @@ index 0000000000..8a973d4176
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
 new file mode 100644
-index 0000000000..10730bb58b
+index 0000000000..00bd41318c
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
-@@ -0,0 +1,272 @@
+@@ -0,0 +1,273 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -379,6 +378,7 @@ index 0000000000..10730bb58b
 +#include <effects/SkDashPathEffect.h>
 +
 +#include <LibGfx/Font/Font.h>
++#include <LibGfx/PaintingSurface.h>
 +#include <LibGfx/PathSkia.h>
 +#include <LibGfx/SkiaUtils.h>
 +#include <LibWeb/Painting/DisplayListCommand.h>
@@ -1430,10 +1430,10 @@ index 0000000000..3fda3f6c02
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..164256cb7c
+index 0000000000..64acebe584
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,359 @@
+@@ -0,0 +1,368 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1523,6 +1523,10 @@ index 0000000000..164256cb7c
 +    }
 +
 +    virtual double device_pixels_per_css_pixel() const override { return 1.0; }
++    virtual double zoom_level() const override { return 1.0; }
++    virtual double device_pixel_ratio() const override { return 1.0; }
++    virtual size_t screen_count() const override { return 1; }
++    virtual void request_frame() override { }
 +    virtual Web::CSS::PreferredColorScheme preferred_color_scheme() const override { return Web::CSS::PreferredColorScheme::Auto; }
 +    virtual Web::CSS::PreferredContrast preferred_contrast() const override { return Web::CSS::PreferredContrast::Auto; }
 +    virtual Web::CSS::PreferredMotion preferred_motion() const override { return Web::CSS::PreferredMotion::Auto; }
@@ -1571,7 +1575,7 @@ index 0000000000..164256cb7c
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
 +        document->update_layout(UpdateLayoutReason::Debugging);
-+        document->invalidate_display_list();
++        document->set_needs_to_record_display_list();
 +
 +        Web::HTML::PaintConfig paint_config {
 +            .paint_overlay = false,
@@ -1695,13 +1699,11 @@ index 0000000000..164256cb7c
 +    font_provider.load_all_fonts_from_uri("resource://fonts"sv);
 +    Web::Platform::FontPlugin::install(*new Web::Platform::FontPlugin(false, &font_provider));
 +
-+    int socket_fds[2] {};
-+    TRY(Core::System::socketpair(AF_LOCAL, SOCK_STREAM, 0, socket_fds));
-+    auto client_socket = TRY(Core::LocalSocket::adopt_fd(socket_fds[0]));
-+    TRY(client_socket->set_blocking(true));
-+    TRY(Core::System::close(socket_fds[1]));
-+
-+    auto request_client = TRY(try_make_ref_counted<Requests::RequestClient>(make<IPC::Transport>(move(client_socket))));
++    // ResourceLoader requires a RequestClient. There is no request server in this CLI, so wire
++    // it to the local end of a transport pair (portable across socket/mach-port platforms); the
++    // peer is dropped. Self-contained HTML renders without issuing requests.
++    auto transport = TRY(IPC::Transport::create_paired());
++    auto request_client = TRY(try_make_ref_counted<Requests::RequestClient>(move(transport.local)));
 +    Web::ResourceLoader::initialize(vm.heap(), move(request_client));
 +
 +    s_renderer_initialized = true;
@@ -1726,9 +1728,16 @@ index 0000000000..164256cb7c
 +    page_client->set_page(page);
 +
 +    // Use create_a_new_top_level_traversable (like SVGDecodedImageData) to avoid BackingStoreManager issues
-+    page->set_top_level_traversable(Web::HTML::TraversableNavigable::create_a_new_top_level_traversable(page, nullptr, {}).release_value_but_fixme_should_propagate_errors());
++    page->set_top_level_traversable(Web::HTML::TraversableNavigable::create_a_new_top_level_traversable(page, nullptr, {}));
 +
 +    m_html_content = TRY(String::from_utf8(html));
++
++    // Default unlabeled input to UTF-8 (the parser's spec default is Windows-1252). An explicit
++    // charset in the first 1024 bytes — the spec's prescan window — still takes precedence.
++    auto scan = html.substring_view(0, min(html.length(), static_cast<size_t>(1024)));
++    if (!scan.contains("charset"sv, CaseSensitivity::CaseInsensitive))
++        m_html_content = TRY(String::formatted("<meta charset=\"utf-8\">{}", m_html_content));
++
 +    page->load_html(m_html_content);
 +
 +    // Process events until document is ready
