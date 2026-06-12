@@ -119,7 +119,7 @@ jobs:
 
       - name: Setup vcpkg
         working-directory: ladybird
-        run: ./Toolchain/BuildVcpkg.py
+        run: ./Meta/Utils/build_vcpkg.py
 
       - name: Save vcpkg binary cache
         uses: actions/cache/save@v4
