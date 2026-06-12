@@ -90,7 +90,16 @@ Utilities/Itbaa/
     └── main.cpp              # CLI tool
 ```
 
-## Known port work
+## Known port work — DisplayListPlayerPDF
 
-`DisplayListPlayerPDF` mirrors LibWeb's `DisplayListPlayer` command interface, which drifts with upstream (e.g. the `ImmutableBitmap` removal and the DisplayList command-list reshape). When the **vanilla** CI build fails to compile, it is almost always this file needing to be re-synced against the current `LibWeb/Painting/DisplayListCommand.h`. The vanilla variant is the canary: it surfaces patch/compile drift independently of the Arabic rebase.
+Upstream reshaped the DisplayList execution model; `DisplayListPlayerPDF` must be re-synced. Concrete contract (from `Libraries/LibWeb/Painting/DisplayList.h`):
+
+- It is now a polymorphic base: `class DisplayListPlayerPDF final : public Web::Painting::DisplayListPlayer`.
+- Driven via the inherited `execute(DisplayList const&, AccumulatedVisualContextTree const&, DisplayListResourceStorage const&, ScrollStateSnapshot const&, RefPtr<Gfx::PaintingSurface>)` — the base's `execute_impl` dispatches to the virtuals; the old hand-rolled `execute(DisplayList&)` Variant-visitor is gone.
+- Must override every pure virtual (mirror `DisplayListPlayerSkia.h`): the draw/fill/clip/path/gradient/shadow ops, plus `flush()`, `apply_effects(ApplyEffects const&, Gfx::Filter const*)`, `apply_transform(Gfx::FloatPoint, Gfx::FloatMatrix4x4 const&)`, `add_clip_path(Gfx::Path const&)`, `would_be_fully_clipped_by_painter(Gfx::IntRect)`. The non-PDF ones (`draw_video_frame`, all `compositor_*`, `paint_scrollbar`, `draw_compositor_surface`) can be no-op stubs.
+- Image command renamed: `DrawScaledImmutableBitmap` → `DrawScaledDecodedImageFrame` / `DrawRepeatedDecodedImageFrame`; `LibGfx/ImmutableBitmap.h` is removed. Pixel data comes via `resource_storage()` + `inline_objects<T>()`, not a bitmap handle.
+
+Keep drawing to the SkPDF page `SkCanvas&` (vector output). `PaintingSurface` has no `create_from_canvas()` factory and SkPDF yields a raw `SkCanvas*`, so the stock Skia player can't be reused without patching LibGfx — the custom player is the right call. Update `Renderer.cpp` to supply the new `execute()` inputs (see how `Services/WebContent` drives `DisplayListPlayerSkia`).
+
+The **vanilla** CI build is the canary for all of this — it surfaces the exact compile errors against current LibWeb, independently of the Arabic rebase.
 ```
