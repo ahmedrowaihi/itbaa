@@ -85,10 +85,14 @@ jobs:
         if: matrix.target.os == 'linux'
         run: |
           sudo apt-get update -y
+          # qt6-* is needed only at configure time: itbaa builds with ENABLE_GUI_TARGETS=ON
+          # (that flag also gates LibWeb/LibGfx), which pulls in the Linux Qt GUI target. We
+          # only compile itbaa-cli, so Qt is never actually built/linked.
           sudo apt-get install -y autoconf autoconf-archive automake build-essential \
             ccache cmake curl fonts-liberation2 gcc-14 g++-14 git libcurl4-openssl-dev \
             libdrm-dev libgl1-mesa-dev libssl-dev libstdc++-14-dev libtool nasm \
-            ninja-build pkg-config python3-venv tar unzip zip
+            ninja-build pkg-config python3-venv qt6-base-dev qt6-tools-dev-tools \
+            qt6-wayland tar unzip zip
 
           if [ "${{ matrix.target.toolchain }}" == "Clang" ]; then
             curl -f -o /tmp/llvm.key https://apt.llvm.org/llvm-snapshot.gpg.key

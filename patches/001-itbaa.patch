@@ -33,7 +33,7 @@ index 2fc895a32a..ab4c984667 100644
    ],
    "testPresets": [
 diff --git a/Meta/CMake/presets/CMakeUnixPresets.json b/Meta/CMake/presets/CMakeUnixPresets.json
-index ea7d9039a7..16133f2206 100644
+index ea7d9039a7..161666f5a5 100644
 --- a/Meta/CMake/presets/CMakeUnixPresets.json
 +++ b/Meta/CMake/presets/CMakeUnixPresets.json
 @@ -55,6 +55,32 @@
@@ -50,7 +50,7 @@ index ea7d9039a7..16133f2206 100644
 +      "cacheVariables": {
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
-+        "ENABLE_GUI_TARGETS": "OFF"
++        "ENABLE_GUI_TARGETS": "ON"
 +      }
 +    },
 +    {
@@ -63,7 +63,7 @@ index ea7d9039a7..16133f2206 100644
 +        "BUILD_SHARED_LIBS": "OFF",
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
-+        "ENABLE_GUI_TARGETS": "OFF",
++        "ENABLE_GUI_TARGETS": "ON",
 +        "VCPKG_OVERLAY_TRIPLETS": "$env{LADYBIRD_SOURCE_DIR}/Meta/CMake/vcpkg/distribution-triplets"
 +      }
      }
@@ -635,10 +635,10 @@ index 0000000000..00bd41318c
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.h b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
 new file mode 100644
-index 0000000000..f95f282682
+index 0000000000..def434563f
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,80 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -657,11 +657,9 @@ index 0000000000..f95f282682
 +
 +namespace Itbaa {
 +
-+// Renders a recorded DisplayList directly onto an SkPDF page canvas (vector PDF
-+// output): implements the LibWeb DisplayListPlayer interface but draws to its
-+// own SkCanvas instead of a Gfx::PaintingSurface. Drawing ops are mirrored from
-+// DisplayListPlayerSkia; commands with no PDF meaning (compositor, video,
-+// gradients, shadows) are no-ops.
++// Plays a recorded DisplayList onto an SkPDF page canvas for vector PDF output. Mirrors
++// DisplayListPlayerSkia but draws to its own SkCanvas, not a Gfx::PaintingSurface; commands
++// with no PDF meaning (compositor, video, gradients, shadows) are no-ops.
 +class DisplayListPlayerPDF final : public Web::Painting::DisplayListPlayer {
 +public:
 +    explicit DisplayListPlayerPDF(SkCanvas& canvas)
@@ -723,10 +721,10 @@ index 0000000000..f95f282682
 +}
 diff --git a/Utilities/Itbaa/lib/Itbaa.cpp b/Utilities/Itbaa/lib/Itbaa.cpp
 new file mode 100644
-index 0000000000..c30653545b
+index 0000000000..e6ff1b0543
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.cpp
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,341 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -740,6 +738,8 @@ index 0000000000..c30653545b
 +#include <AK/String.h>
 +#include <LibCore/File.h>
 +#include <LibCore/MappedFile.h>
++#include <LibFileSystem/FileSystem.h>
++#include <LibURL/URL.h>
 +#include <errno.h>
 +#include <stdio.h>
 +#include <string.h>
@@ -861,12 +861,27 @@ index 0000000000..c30653545b
 +    if (!ctx || !path)
 +        return ITBAA_ERROR_INVALID_ARGUMENT;
 +
-+    auto file_result = Core::MappedFile::map(StringView { path, strlen(path) });
++    auto path_view = StringView { path, strlen(path) };
++    auto file_result = Core::MappedFile::map(path_view);
 +    if (file_result.is_error())
 +        return ITBAA_ERROR_FILE_NOT_FOUND;
 +
 +    auto file = file_result.release_value();
-+    return itbaa_load_html(ctx, reinterpret_cast<char const*>(file->bytes().data()), file->bytes().size());
++    auto string_result = AK::String::from_utf8(StringView { reinterpret_cast<char const*>(file->bytes().data()), file->bytes().size() });
++    if (string_result.is_error())
++        return ITBAA_ERROR_MEMORY_ALLOCATION;
++    ctx->html_content = string_result.release_value();
++
++    // The document's own file:// URL gives it a file:// origin so same-origin subresources load.
++    Optional<URL::URL> document_url;
++    if (auto absolute = FileSystem::real_path(path_view); !absolute.is_error())
++        document_url = URL::create_with_file_scheme(absolute.value());
++
++    auto result = ctx->renderer.load_html(ctx->html_content, document_url);
++    if (result.is_error())
++        return ITBAA_ERROR_RENDER_FAILED;
++
++    return ITBAA_OK;
 +}
 +
 +static Itbaa::RenderConfig options_to_config(ItbaaOptions const* options)
@@ -1431,24 +1446,26 @@ index 0000000000..3fda3f6c02
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
 new file mode 100644
-index 0000000000..4b6b780d7e
+index 0000000000..1a17a9a763
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,416 @@
+@@ -0,0 +1,419 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
 + * SPDX-License-Identifier: BSD-2-Clause
 + */
 +
-+#include "Renderer.h"
 +#include "DisplayListPlayerPDF.h"
++#include "Renderer.h"
++
++#include <fcntl.h>
++
 +#include <LibCore/AnonymousBuffer.h>
 +#include <LibCore/EventLoop.h>
 +#include <LibCore/MappedFile.h>
-+#include <LibCore/Socket.h>
-+#include <LibCore/System.h>
 +#include <LibCore/Promise.h>
++#include <LibCore/System.h>
 +#include <LibGfx/Font/FontDatabase.h>
 +#include <LibGfx/Font/PathFontProvider.h>
 +#include <LibGfx/ImageFormats/ImageDecoder.h>
@@ -1583,7 +1600,11 @@ index 0000000000..4b6b780d7e
 +    virtual void report_finished_handling_input_event(u64, Web::EventResult) override { }
 +    virtual Web::DisplayListPlayerType display_list_player_type() const override { return Web::DisplayListPlayerType::SkiaCPU; }
 +    virtual bool is_headless() const override { return true; }
-+    virtual void request_file(Web::FileRequest) override { }
++    virtual void request_file(Web::FileRequest request) override
++    {
++        // Serves file:// subresources; grants the rendered HTML local filesystem read access.
++        request.on_file_request_finish(Core::System::open(request.path(), O_RDONLY));
++    }
 +
 +    void set_page(GC::Ref<Web::Page> page) { m_page = page; }
 +    void set_viewport_size(Web::DevicePixelSize size) { m_viewport_size = size; }
@@ -1605,7 +1626,6 @@ index 0000000000..4b6b780d7e
 +
 +        float device_pixels_per_css = page().client().device_pixels_per_css_pixel();
 +
-+        // Set viewport size for proper layout
 +        document->navigable()->set_viewport_size(Web::CSSPixelSize { page_width / device_pixels_per_css, page_height / device_pixels_per_css });
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
@@ -1642,8 +1662,7 @@ index 0000000000..4b6b780d7e
 +            return Error::from_string_literal("Document has no paintable visual context tree");
 +        auto visual_context_tree = document_paintable->visual_context_tree();
 +
-+        // DisplayListPlayer::execute() requires a PaintingSurface; the PDF player draws to
-+        // its own SkCanvas and never reads it, so a 1x1 placeholder is enough.
++        // execute() requires a PaintingSurface, but the PDF player draws to its own SkCanvas and never reads it.
 +        auto placeholder_surface = Gfx::PaintingSurface::create_with_size({ 1, 1 }, Gfx::BitmapFormat::BGRA8888, Gfx::AlphaType::Premultiplied);
 +
 +        int num_pages = (total_height + page_height - 1) / page_height;
@@ -1681,7 +1700,6 @@ index 0000000000..4b6b780d7e
 +        int page_height = m_viewport_size.height().value();
 +        float device_pixels_per_css = page().client().device_pixels_per_css_pixel();
 +
-+        // Set viewport size for proper layout
 +        document->navigable()->set_viewport_size(Web::CSSPixelSize { page_width / device_pixels_per_css, page_height / device_pixels_per_css });
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
@@ -1724,7 +1742,6 @@ index 0000000000..4b6b780d7e
 +
 +GC_DEFINE_ALLOCATOR(RendererPageClient);
 +
-+// Static initialization state
 +static bool s_renderer_initialized = false;
 +static OwnPtr<Core::EventLoop> s_event_loop;
 +
@@ -1748,9 +1765,8 @@ index 0000000000..4b6b780d7e
 +    Web::Platform::FontPlugin::install(*new Web::Platform::FontPlugin(false, &font_provider));
 +    Web::Platform::ImageCodecPlugin::install(*new InProcessImageCodecPlugin);
 +
-+    // ResourceLoader requires a RequestClient. There is no request server in this CLI, so wire
-+    // it to the local end of a transport pair (portable across socket/mach-port platforms); the
-+    // peer is dropped. Self-contained HTML renders without issuing requests.
++    // ResourceLoader requires a RequestClient, but this CLI has no request server: wire it to a
++    // dead transport pair. No network is issued; only file:// and data: subresources load.
 +    auto transport = TRY(IPC::Transport::create_paired());
 +    auto request_client = TRY(try_make_ref_counted<Requests::RequestClient>(move(transport.local)));
 +    Web::ResourceLoader::initialize(vm.heap(), move(request_client));
@@ -1765,7 +1781,7 @@ index 0000000000..4b6b780d7e
 +    s_renderer_initialized = false;
 +}
 +
-+ErrorOr<void> Renderer::load_html(StringView html)
++ErrorOr<void> Renderer::load_html(StringView html, Optional<URL::URL> document_url)
 +{
 +    if (!s_renderer_initialized)
 +        return Error::from_string_literal("Renderer not initialized");
@@ -1776,18 +1792,20 @@ index 0000000000..4b6b780d7e
 +    auto page = Web::Page::create(vm, page_client);
 +    page_client->set_page(page);
 +
-+    // Use create_a_new_top_level_traversable (like SVGDecodedImageData) to avoid BackingStoreManager issues
 +    page->set_top_level_traversable(Web::HTML::TraversableNavigable::create_a_new_top_level_traversable(page, nullptr, {}));
 +
 +    m_html_content = TRY(String::from_utf8(html));
 +
-+    // Default unlabeled input to UTF-8 (the parser's spec default is Windows-1252). An explicit
-+    // charset in the first 1024 bytes — the spec's prescan window — still takes precedence.
++    // Default unlabeled input to UTF-8 (parser default is Windows-1252); an explicit charset within
++    // the spec's 1024-byte prescan window still wins.
 +    auto scan = html.substring_view(0, min(html.length(), static_cast<size_t>(1024)));
 +    if (!scan.contains("charset"sv, CaseSensitivity::CaseInsensitive))
 +        m_html_content = TRY(String::formatted("<meta charset=\"utf-8\">{}", m_html_content));
 +
-+    page->load_html(m_html_content);
++    if (document_url.has_value())
++        page->load_html(m_html_content, *document_url);
++    else
++        page->load_html(m_html_content);
 +
 +    // Process events until document is ready
 +    while (Core::EventLoop::current().pump(Core::EventLoop::WaitMode::PollForEvents))
@@ -1853,10 +1871,10 @@ index 0000000000..4b6b780d7e
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.h b/Utilities/Itbaa/lib/Renderer.h
 new file mode 100644
-index 0000000000..afb8296b82
+index 0000000000..06d7207ad7
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.h
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,85 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1869,7 +1887,9 @@ index 0000000000..afb8296b82
 +#include <AK/Error.h>
 +#include <AK/String.h>
 +#include <AK/Vector.h>
++#include <AK/Optional.h>
 +#include <LibGC/Ptr.h>
++#include <LibURL/URL.h>
 +#include <LibWeb/Page/Page.h>
 +#include <LibWeb/PixelUnits.h>
 +
@@ -1911,8 +1931,9 @@ index 0000000000..afb8296b82
 +    // Shutdown the rendering engine
 +    static void shutdown();
 +
-+    // Load HTML content
-+    ErrorOr<void> load_html(StringView html);
++    // Load HTML content. A file:// document_url gives the document a file:// origin so it can
++    // load same-origin file:// subresources (fonts/CSS/images).
++    ErrorOr<void> load_html(StringView html, Optional<URL::URL> document_url = {});
 +
 +    // Load HTML from file
 +    ErrorOr<void> load_html_file(StringView path);
