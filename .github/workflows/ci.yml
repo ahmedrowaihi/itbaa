@@ -23,7 +23,7 @@ jobs:
                       ref: master
                     - name: arabic
                       repo: ahmedrowaihi/ladybird-itbaa
-                      ref: upstream
+                      ref: itbaa
 
         steps:
             - name: Checkout Itbaa

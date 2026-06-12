@@ -28,7 +28,7 @@ jobs:
             ref: master
           - name: arabic
             repo: ahmedrowaihi/ladybird-itbaa
-            ref: upstream
+            ref: itbaa
         target:
           - { os: linux, arch: x86_64, runner: ubuntu-24.04, toolchain: GNU }
           - {
@@ -300,7 +300,7 @@ jobs:
             | Variant | Ladybird source | Commit |
             |---------|-----------------|--------|
             | vanilla | `LadybirdBrowser/ladybird@master` | `${{ steps.notes.outputs.vanilla_sha }}` |
-            | arabic | `ahmedrowaihi/ladybird-itbaa@upstream` | `${{ steps.notes.outputs.arabic_sha }}` |
+            | arabic | `ahmedrowaihi/ladybird-itbaa@itbaa` | `${{ steps.notes.outputs.arabic_sha }}` |
 
             ### Usage
 
