@@ -17,6 +17,27 @@
 - **C API** and an **[npm package](npm/itbaa/)** for Node.
 - ~6× faster than Playwright, ~15× than Puppeteer ([below](#performance)).
 
+## Why itbaa?
+
+Every way to make a PDF from HTML forces a trade-off: a modern engine (headless
+Chrome) but with the browser's weight, cold starts and RAM; **no** browser
+(wkhtmltopdf, WeasyPrint) but broken modern CSS; print fidelity (PrinceXML) but a
+$3,800/server license; or a SaaS API that bills per document and sees all your data.
+
+itbaa skips the trade-off — a real modern engine's full CSS, no browser, run
+locally, for free.
+
+| Approach | Cost / footprint | Speed | Catch |
+| --- | --- | --- | --- |
+| Headless Chrome (Puppeteer/Playwright) | ~300 MB + 1–2 GB RAM/instance | 1.3–15 s cold · ~0.7–1.7 s warm | Too big for Lambda's default package, OOMs under 1 GB, cold starts, browser pools to scale |
+| wkhtmltopdf | Free | Fast | Dead engine (Qt WebKit ~2012) — no flexbox/grid/CSS variables; dropped from Ubuntu 24.04 |
+| WeasyPrint | Free | 1–2 s | No JS, partial flexbox, no grid; chokes on Tailwind v4; needs Pango/Cairo |
+| PrinceXML / DocRaptor | $3,800/server · ~$0.06/doc | ~1.2 s | Pricey; its CSS conflicts with modern web CSS |
+| SaaS APIs (PDFShift, Api2Pdf…) | $0.003–0.06/doc · $3k–12k/yr at 1M | 0.9–5 s | Recurring forever; your data leaves your infra; lock-in |
+| **itbaa** | **Free · ~120 MB · local** | **~112 ms** | A single binary — full CSS, vector PDF, Arabic/RTL |
+
+<sub>Figures from public pricing and benchmarks, early 2026.</sub>
+
 ## Install
 
 ### Linux & macOS (one-liner)
