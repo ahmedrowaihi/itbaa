@@ -1,3 +1,5 @@
+![itbaa](https://socialify.git.ci/ahmedrowaihi/itbaa/image?custom_language=Shell&description=0&font=Inter&language=1&name=1&owner=1&stargazers=0&theme=Auto)
+
 # Itbaa (اطبع) - HTML to PDF Converter
 
 [![Release](https://github.com/ahmedrowaihi/itbaa/actions/workflows/release.yml/badge.svg)](https://github.com/ahmedrowaihi/itbaa/actions/workflows/release.yml)
