@@ -8,13 +8,22 @@
 
 ## Features
 
-- **Vector PDF output** - Generates true vector PDFs with selectable text
-- **Full font support** - Handles embedded fonts, base64 fonts, and system fonts
-- **International text** - Full support for RTL languages (Arabic, Hebrew) and complex scripts
-- **Multi-page documents** - Automatic pagination with configurable page sizes
-- **Full CSS support** - Modern CSS including flexbox, grid, and custom properties
+- **Vector PDF output** - True vector PDFs with selectable text and embedded fonts
+- **Image output** - Render to PNG or JPEG, or to a single tall "no-cut" page that never splits content across page breaks
+- **Full CSS rendering** - Flexbox, grid, transforms, gradients, box/text shadows, and nested layers all paint correctly
+- **Font support** - `@font-face` web fonts (local, remote, base64) plus bundled and system fallbacks
+- **International text** - RTL languages (Arabic, Hebrew) and complex scripts; an `arabic` variant adds a bidirectional-text fix
+- **Raster images** - Embeds PNG/JPEG assets (e.g. logos) directly from disk
+- **Batch & scripting** - Convert folders or many files at once; JSON/NDJSON output for pipelines
 - **C API** - Easy integration with Node.js, Python, and other languages
-- **High Performance** - 6.72x faster than Playwright, 13.86x faster than Puppeteer
+- **High Performance** - 6.43x faster than Playwright, 14.93x faster than Puppeteer
+
+## Variants
+
+Each release ships two interchangeable builds — pick whichever rendering you need:
+
+- **vanilla** — latest upstream Ladybird, unmodified.
+- **arabic** — upstream + a bidirectional/Arabic text fix (correct word order and shaping for mixed Arabic/English).
 
 ## Performance
 
@@ -22,7 +31,7 @@ Benchmark results comparing Itbaa with Playwright and Puppeteer on a simple HTML
 
 | Tool       | Time (ms) [min-max]       | Binary Size |
 | ---------- | ------------------------- | ----------- |
-| **Itbaa**  | 111.66 (73.45-446.15)     | 118~240 MB      |
+| **Itbaa**  | 111.66 (73.45-446.15)     | 118~240 MB  |
 | Playwright | 717.92 (657.29-1178.56)   | ~516 MB     |
 | Puppeteer  | 1667.35 (1317.29-4559.41) | ~1.9 GB     |
 
@@ -61,33 +70,55 @@ Benchmark results comparing Itbaa with Playwright and Puppeteer on a simple HTML
 
 ### Usage
 
+The CLI is subcommand-based (`render`, `info`, `version`, `help`). The output
+format is chosen by the output file's extension: `.pdf`, `.png`, or `.jpg`.
+
 ```bash
-# Convert HTML to PDF
-./build/bin/itbaa document.html output.pdf
+# Convert HTML to a vector PDF
+./build/bin/itbaa render document.html output.pdf
 
-# Show document info
-./build/bin/itbaa --info document.html
+# Render to an image
+./build/bin/itbaa render report.html report.png --scale 2
 
-# Limit pages
-./build/bin/itbaa -p 5 document.html output.pdf
+# One tall page, no page-break cuts (great for long reports)
+./build/bin/itbaa render long.html out.pdf --single-page
+
+# Render a subset of pages
+./build/bin/itbaa render document.html out.pdf --pages 2-5,8
 
 # Custom page size
-./build/bin/itbaa --size letter document.html output.pdf
-./build/bin/itbaa -w 800 -h 600 document.html output.pdf
+./build/bin/itbaa render document.html out.pdf --size letter
+./build/bin/itbaa render document.html out.pdf --width 800 --height 600
+
+# Batch a folder of HTML files into ./pdfs
+./build/bin/itbaa render ./pages --out-dir ./pdfs
+
+# Inspect a document (page count and dimensions) as JSON
+./build/bin/itbaa info document.html --format json
 ```
 
 ### Command Line Options
 
-| Option              | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `-i, --info`        | Show document info without generating PDF    |
-| `-p, --pages <N>`   | Maximum number of pages (default: all)       |
-| `-w, --width <N>`   | Page width in pixels (default: 794 for A4)   |
-| `-h, --height <N>`  | Page height in pixels (default: 1123 for A4) |
-| `-s, --size <SIZE>` | Page size preset: a4, letter, legal, a3      |
-| `--no-full-page`    | Don't capture full scrollable content        |
-| `--version`         | Show version information                     |
-| `--help`            | Show help message                            |
+`render` and `info` accept these options:
+
+| Option            | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `--pages <RANGE>` | Pages to render: `3`, `2-5`, `3-`, `-4`, `1,3,5-7` (all)   |
+| `--single-page`   | Emit one tall page instead of splitting into page tiles    |
+| `--raster`        | Embed pages as images in the PDF (no selectable text)      |
+| `--scale <N>`     | Resolution multiplier for image/raster output (default: 2) |
+| `--size <PRESET>` | Page size preset: `a4`, `letter`, `legal`, `a3`            |
+| `--width <PX>`    | Custom page width (overrides `--size`)                     |
+| `--height <PX>`   | Custom page height (overrides `--size`)                    |
+| `--no-full-page`  | Don't capture full scrollable content                      |
+| `--out-dir <DIR>` | Write derived outputs into DIR (batch)                     |
+| `--to <FMT>`      | Derived-output format for batch: `pdf`, `png`, `jpg`       |
+| `--timeout <SEC>` | Max seconds to wait for resources (default: 10)            |
+| `--format <FMT>`  | Output log format: `human` or `json` (default: human)      |
+| `-q, --quiet`     | Suppress diagnostics and success lines                     |
+| `-v, --verbose`   | Show engine diagnostics                                    |
+
+Run `itbaa help` for the full reference, or `itbaa version` for the version.
 
 ## C API
 
@@ -108,6 +139,10 @@ int main() {
     ItbaaOptions options = itbaa_default_options();
     itbaa_convert_to_file(ctx, &options, "output.pdf");
 
+    // ...or to an image (PNG/JPEG, chosen by the path extension)
+    // options.single_page = 1;  // capture the whole document as one tall image
+    // itbaa_render_to_image_file(ctx, &options, "output.png");
+
     // Cleanup
     itbaa_context_destroy(ctx);
     itbaa_shutdown();
@@ -116,31 +151,35 @@ int main() {
 }
 ```
 
+`ItbaaOptions` also carries `pages` (a range spec like `"2-5,8"`), `single_page`,
+`rasterize`, and `scale`. See [`Itbaa.h`](https://github.com/ahmedrowaihi/itbaa) for the full C API.
+
 ## Fonts and Consistency
 
-Itbaa ensures **identical PDF output regardless of which platform generates the PDF**. PDFs created on macOS will look exactly the same when viewed or printed on Linux, Windows, or any other system.
+Itbaa ensures **identical PDF output regardless of which platform generates the PDF**. A PDF created on macOS looks exactly the same as one created on Linux, and renders identically wherever it is viewed. (Binaries are provided for macOS and Linux.)
 
 ### Font Loading Priority
 
 1. **HTML `@font-face` fonts** (highest priority)
-
     - Fonts specified in your HTML via `@font-face` rules are automatically loaded
     - These take priority over all other fonts for matching `font-family` names
-    - Supports local files, remote URLs, and base64-encoded fonts
+    - Supports local files (`file://` / relative paths) and base64-encoded (data URI) fonts
+
+> **Offline by design.** Itbaa does not fetch assets over the network — fonts, images,
+> and stylesheets must be local files or embedded (base64 / data URI). A remote
+> `http(s)` URL will fail to load and make the render wait out `--timeout` before
+> falling back, so reference assets locally.
 
 2. **Bundled fonts** (loaded FIRST for consistency)
-
     - `NotoEmoji.ttf` - Emoji support (consistent across all platforms)
     - `SerenitySans-Regular.ttf` - Default sans-serif font
     - **These fonts are the same on macOS, Linux, and Windows**
     - By loading bundled fonts first, PDFs generated on any platform will use the same fonts
 
 3. **System fonts** (loaded as fallback)
-
     - **macOS**: `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`
     - **Linux**: System font directories (via fontconfig or standard paths)
-    - **Windows**: `%WINDIR%\Fonts`, `%LOCALAPPDATA%\Microsoft\Windows\Fonts`
-    - System fonts provide additional emoji variants and fallback options
+    - System fonts provide additional glyph and fallback coverage
     - Only used if bundled fonts don't have the required glyphs
 
 ### Using Custom Fonts
@@ -159,21 +198,33 @@ Itbaa ensures **identical PDF output regardless of which platform generates the 
 </style>
 ```
 
-**For consistent emoji rendering (Apple Color Emoji style):**
+**Option 2: base64 / data URI (fully self-contained)**
 
 ```html
 <style>
     @font-face {
-        font-family: "Apple Color Emoji";
-        src: url("https://github.com/samuelngs/apple-emoji-linux/releases/download/v15.4/AppleColorEmoji.ttf") format("truetype");
-    }
-    body {
-        font-family: -apple-system, "Apple Color Emoji", sans-serif;
+        font-family: "MyFont";
+        src: url("data:font/woff2;base64,d09GMgAB...") format("woff2");
     }
 </style>
 ```
 
-This ensures emojis look identical across all platforms (macOS-style emojis everywhere).
+**For consistent color emoji**, download a color emoji font (e.g. Noto Color Emoji or
+Apple Color Emoji) ahead of time and reference the **local file**:
+
+```html
+<style>
+    @font-face {
+        font-family: "Color Emoji";
+        src: url("./AppleColorEmoji.ttf") format("truetype");
+    }
+    body {
+        font-family: -apple-system, "Color Emoji", sans-serif;
+    }
+</style>
+```
+
+Bundling the font locally keeps emoji identical across platforms (and works offline).
 
 ## Building for Distribution
 
@@ -187,23 +238,28 @@ For static builds suitable for distribution:
 
 ```
 Utilities/Itbaa/
-├── lib/                  # Core library
-│   ├── Itbaa.h          # Public C API
-│   ├── Itbaa.cpp        # C API implementation
-│   ├── Renderer.h/cpp   # HTML rendering engine
-│   ├── PDFWriter.h/cpp  # PDF generation
-│   └── DisplayListPlayerPDF.h/cpp  # Vector rendering
-└── cli/                  # CLI tool
+├── lib/                            # Core library
+│   ├── Itbaa.h / Itbaa.cpp         # Public C API
+│   ├── Renderer.h/cpp              # HTML rendering engine
+│   ├── PDFWriter.h/cpp             # PDF generation (vector + raster)
+│   ├── ImageWriter.h/cpp           # PNG/JPEG output
+│   ├── DisplayListPlayerPDF.h/cpp  # Vector painting onto the PDF canvas
+│   ├── PageRange.h/cpp             # Page-range spec parsing
+│   ├── InProcessImageCodecPlugin.* # In-process image decoding
+│   └── RequestClientFactory.*      # file:// subresource loading
+└── cli/                            # CLI tool
     └── main.cpp
 ```
 
-## Known Issues
+## BiDi / RTL Text
 
-### BiDi / RTL Text Rendering
+Upstream Ladybird has a known limitation with bidirectional (BiDi) text that can
+affect Arabic, Hebrew, and other RTL languages — word order or spacing may be
+wrong in some cases ([LadybirdBrowser/ladybird#7288](https://github.com/LadybirdBrowser/ladybird/issues/7288)).
 
-There is a known issue with bidirectional (BiDi) text rendering in Ladybird's engine that affects Arabic, Hebrew, and other RTL languages. Text may appear with incorrect word order or spacing in some cases.
-
-**Upstream Issue:** [LadybirdBrowser/ladybird#7288](https://github.com/LadybirdBrowser/ladybird/issues/7288)
+The **arabic** release variant is built with a bidirectional-text fix on top of
+upstream and renders mixed Arabic/English correctly. Use the **vanilla** variant
+if you don't need it; the two are otherwise identical.
 
 ## History
 
