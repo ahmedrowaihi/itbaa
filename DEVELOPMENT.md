@@ -25,8 +25,8 @@ ahmedrowaihi/ladybird-itbaa @ upstream ────┘ (same patch)             
 ./build.sh --variant vanilla --static
 
 # binary: ladybird/Build/itbaa-static/bin/itbaa
-./ladybird/Build/itbaa-static/bin/itbaa input.html output.pdf
-./ladybird/Build/itbaa-static/bin/itbaa --info input.html
+./ladybird/Build/itbaa-static/bin/itbaa render input.html output.pdf
+./ladybird/Build/itbaa-static/bin/itbaa info input.html
 ```
 
 `build.sh` clones the right base, applies `patches/*.patch`, configures the `Itbaa_Static` preset, and builds `itbaa-cli`.
@@ -82,24 +82,24 @@ git tag v0.2.0 && git push origin v0.2.0
 ```
 Utilities/Itbaa/
 ├── lib/
-│   ├── Itbaa.h/cpp           # C API
-│   ├── Renderer.h/cpp        # HTML rendering / LibWeb page setup
-│   ├── PDFWriter.h/cpp       # PDF generation
-│   └── DisplayListPlayerPDF  # DisplayList → PDF vector rendering
+│   ├── Itbaa.h/cpp                # C API
+│   ├── Renderer.h/cpp             # HTML rendering / LibWeb page setup
+│   ├── PDFWriter.h/cpp            # PDF generation (vector + raster)
+│   ├── ImageWriter.h/cpp          # PNG/JPEG output (LibGfx encoders)
+│   ├── DisplayListPlayerPDF.*     # DisplayList → PDF vector rendering
+│   ├── PageRange.h/cpp            # Page-range spec parsing (2-5, 3-, 1,3,5-7)
+│   ├── InProcessImageCodecPlugin.* # In-process image decoding
+│   └── RequestClientFactory.*     # file:// subresource loading
 └── cli/
-    └── main.cpp              # CLI tool
+    └── main.cpp                  # CLI tool (render/info/version/help)
 ```
 
-## Known port work — DisplayListPlayerPDF
+## DisplayListPlayerPDF (vector rendering)
 
-Upstream reshaped the DisplayList execution model; `DisplayListPlayerPDF` must be re-synced. Concrete contract (from `Libraries/LibWeb/Painting/DisplayList.h`):
+`DisplayListPlayerPDF` is itbaa's renderer. It subclasses `Web::Painting::DisplayListPlayer` and is driven by the inherited `execute(DisplayList const&, AccumulatedVisualContextTree const&, DisplayListResourceStorage const&, ScrollStateSnapshot const&, RefPtr<Gfx::PaintingSurface>)`, which dispatches to the overridden draw/fill/clip/path command handlers.
 
-- It is now a polymorphic base: `class DisplayListPlayerPDF final : public Web::Painting::DisplayListPlayer`.
-- Driven via the inherited `execute(DisplayList const&, AccumulatedVisualContextTree const&, DisplayListResourceStorage const&, ScrollStateSnapshot const&, RefPtr<Gfx::PaintingSurface>)` — the base's `execute_impl` dispatches to the virtuals; the old hand-rolled `execute(DisplayList&)` Variant-visitor is gone.
-- Must override every pure virtual (mirror `DisplayListPlayerSkia.h`): the draw/fill/clip/path/gradient/shadow ops, plus `flush()`, `apply_effects(ApplyEffects const&, Gfx::Filter const*)`, `apply_transform(Gfx::FloatPoint, Gfx::FloatMatrix4x4 const&)`, `add_clip_path(Gfx::Path const&)`, `would_be_fully_clipped_by_painter(Gfx::IntRect)`. The non-PDF ones (`draw_video_frame`, all `compositor_*`, `paint_scrollbar`, `draw_compositor_surface`) can be no-op stubs.
-- Image command renamed: `DrawScaledImmutableBitmap` → `DrawScaledDecodedImageFrame` / `DrawRepeatedDecodedImageFrame`; `LibGfx/ImmutableBitmap.h` is removed. Pixel data comes via `resource_storage()` + `inline_objects<T>()`, not a bitmap handle.
+It draws to the SkPDF page `SkCanvas&` rather than a `Gfx::PaintingSurface`, which is what keeps the PDF **vector with selectable text**. The stock `DisplayListPlayerSkia` can't be reused for this: it renders into a `PaintingSurface` (an `SkSurface`), and SkPDF yields a raw `SkCanvas*` with no `PaintingSurface` wrapper — so the handler bodies are mirrored from `DisplayListPlayerSkia` instead.
 
-Keep drawing to the SkPDF page `SkCanvas&` (vector output). `PaintingSurface` has no `create_from_canvas()` factory and SkPDF yields a raw `SkCanvas*`, so the stock Skia player can't be reused without patching LibGfx — the custom player is the right call. Update `Renderer.cpp` to supply the new `execute()` inputs (see how `Services/WebContent` drives `DisplayListPlayerSkia`).
+Gradients (emitted as native PDF shadings), box/text shadows, and nested display lists are fully painted; SkPDF rasterizes effects it can't express as vector. Image/PNG/JPEG and raster-PDF modes reuse the same recorded picture. Non-PDF commands (`draw_video_frame`, `compositor_*`, `paint_scrollbar`) are no-op stubs. SVG pattern fills and `backdrop-filter` are the remaining approximations.
 
-The **vanilla** CI build is the canary for all of this — it surfaces the exact compile errors against current LibWeb, independently of the Arabic rebase.
-```
+When upstream reshapes the DisplayList model, the **vanilla** CI build is the canary — it surfaces the exact compile errors against current LibWeb, independently of the Arabic rebase.

@@ -11,7 +11,7 @@
 - **Vector PDF output** - True vector PDFs with selectable text and embedded fonts
 - **Image output** - Render to PNG or JPEG, or to a single tall "no-cut" page that never splits content across page breaks
 - **Full CSS rendering** - Flexbox, grid, transforms, gradients, box/text shadows, and nested layers all paint correctly
-- **Font support** - `@font-face` web fonts (local, remote, base64) plus bundled and system fallbacks
+- **Font support** - `@font-face` web fonts (local files or base64) plus bundled and system fallbacks
 - **International text** - RTL languages (Arabic, Hebrew) and complex scripts; an `arabic` variant adds a bidirectional-text fix
 - **Raster images** - Embeds PNG/JPEG assets (e.g. logos) directly from disk
 - **Batch & scripting** - Convert folders or many files at once; JSON/NDJSON output for pipelines
@@ -24,6 +24,61 @@ Each release ships two interchangeable builds — pick whichever rendering you n
 
 - **vanilla** — latest upstream Ladybird, unmodified.
 - **arabic** — upstream + a bidirectional/Arabic text fix (correct word order and shaping for mixed Arabic/English).
+
+## Install
+
+### Linux & macOS (one-liner)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh | sh
+```
+
+Installs the latest **arabic** build to `/usr/local/bin/itbaa`. Override with environment variables:
+
+```bash
+# vanilla variant, a pinned version, or a custom location
+curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh \
+  | ITBAA_VARIANT=vanilla ITBAA_VERSION=v1.0.0 ITBAA_INSTALL_DIR="$HOME/.local/bin" sh
+```
+
+| Variable            | Default          | Description                  |
+| ------------------- | ---------------- | ---------------------------- |
+| `ITBAA_VARIANT`     | `arabic`         | `arabic` or `vanilla`        |
+| `ITBAA_VERSION`     | `latest`         | A release tag, e.g. `v1.0.0` |
+| `ITBAA_INSTALL_DIR` | `/usr/local/bin` | Where to install the binary  |
+
+Uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh | sh -s -- --uninstall
+```
+
+> macOS builds are Apple Silicon (arm64) only. Linux binaries are glibc-based — use a
+> glibc distro (Debian/Ubuntu/RHEL), not Alpine/musl.
+
+### Docker
+
+Use a **glibc** base image, install the Linux runtime libs, then run the installer:
+
+```dockerfile
+FROM debian:bookworm-slim
+# Runtime libs (libatomic1 is only needed on arm64, harmless on amd64) + curl/CA for the installer
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      ca-certificates curl \
+      libstdc++6 libgcc-s1 libatomic1 \
+ && rm -rf /var/lib/apt/lists/*
+# Optional: add a font package (e.g. fonts-liberation) for common system font families.
+RUN curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh \
+      | ITBAA_VERSION=v1.0.0 sh
+# itbaa is now on PATH:  itbaa render input.html out.pdf
+```
+
+Pin `ITBAA_VERSION` for reproducible image builds.
+
+### Manual
+
+Download a tarball/zip for your platform from the [latest release](https://github.com/ahmedrowaihi/itbaa/releases/latest),
+extract it, and place the binary on your `PATH`.
 
 ## Performance
 
@@ -50,15 +105,19 @@ Benchmark results comparing Itbaa with Playwright and Puppeteer on a simple HTML
 
 **For running pre-built binaries:**
 
-- Linux: `libatomic1`, `libstdc++6`, `libgcc-s1`, `fontconfig`, `fonts-liberation`
+- Linux: `libstdc++6`, `libgcc-s1` — and `libatomic1` on **arm64** only. These are the
+  only hard requirements (fontconfig, freetype, and harfbuzz are statically built in).
 
     ```bash
-    # Ubuntu/Debian
-    sudo apt-get install libatomic1 libstdc++6 libgcc-s1 fontconfig fonts-liberation
+    # Debian/Ubuntu
+    sudo apt-get install libstdc++6 libgcc-s1   # + libatomic1 on arm64
 
     # CentOS/RHEL
-    sudo yum install libatomic libstdc++ libgcc fontconfig liberation-fonts
+    sudo yum install libstdc++ libgcc           # + libatomic on arm64
     ```
+
+    Optional: install a font package (e.g. `fonts-liberation`) for documents that rely on
+    common system font families — the binary bundles fonts for basic text either way.
 
 - macOS: No additional dependencies (all libraries included)
 
@@ -153,6 +212,22 @@ int main() {
 
 `ItbaaOptions` also carries `pages` (a range spec like `"2-5,8"`), `single_page`,
 `rasterize`, and `scale`. See [`Itbaa.h`](https://github.com/ahmedrowaihi/itbaa) for the full C API.
+
+## Use with AI agents
+
+itbaa is a great fit for AI agents that turn HTML into PDFs or images (reports, invoices,
+certificates). This repo ships a cross-agent skill ([skills/itbaa/SKILL.md](skills/itbaa/SKILL.md),
+the universal `SKILL.md` format) that teaches an agent when and how to drive the CLI.
+
+Install it with the [skills CLI](https://github.com/vercel-labs/skills) — it auto-detects
+your agent (Claude Code, Cursor, Cline, Codex, and 70+ others):
+
+```bash
+npx skills add ahmedrowaihi/itbaa
+```
+
+Use `--list` to preview, `--copy` to vendor it instead of symlinking, or add `--agent <name>`
+to target a specific agent.
 
 ## Fonts and Consistency
 

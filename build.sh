@@ -132,6 +132,6 @@ echo ""
 echo "Binary location: $SCRIPT_DIR/ladybird/$BUILD_DIR/bin/itbaa"
 echo ""
 echo "Usage:"
-echo "  $BUILD_DIR/bin/itbaa <input.html> <output.pdf>"
-echo "  $BUILD_DIR/bin/itbaa --help"
+echo "  $BUILD_DIR/bin/itbaa render <input.html> <output.pdf>"
+echo "  $BUILD_DIR/bin/itbaa help"
 

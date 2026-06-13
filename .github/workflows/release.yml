@@ -12,7 +12,7 @@ on:
 
 concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -212,7 +212,7 @@ jobs:
         working-directory: ladybird
         run: |
           printf '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body dir="rtl"><h1>\xd9\x85\xd8\xb1\xd8\xad\xd8\xa8\xd8\xa7 Hello</h1><p>Arabic \xd9\x88 English</p></body></html>' > smoke.html
-          ./Build/bin/itbaa smoke.html smoke.pdf
+          ./Build/bin/itbaa render smoke.html smoke.pdf
           head -c5 smoke.pdf | grep -q '%PDF' || { echo "::error::output is not a valid PDF"; exit 1; }
           size=$(wc -c < smoke.pdf)
           [ "$size" -gt 1000 ] || { echo "::error::PDF suspiciously small ($size bytes) — likely nothing rendered"; exit 1; }
@@ -252,6 +252,12 @@ jobs:
       contents: write
 
     steps:
+      - name: Checkout Itbaa
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: install.sh
+          sparse-checkout-cone-mode: false
+
       - name: Determine release tag
         id: tag
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
@@ -296,7 +302,9 @@ jobs:
           name: Itbaa ${{ steps.tag.outputs.tag }}
           draft: false
           prerelease: ${{ contains(steps.tag.outputs.tag, 'alpha') || contains(steps.tag.outputs.tag, 'beta') || contains(steps.tag.outputs.tag, 'rc') }}
-          files: artifacts/*
+          files: |
+            artifacts/*
+            install.sh
           generate_release_notes: true
           body: |
             ## Itbaa (اطبع) — HTML → PDF, PNG & JPEG
