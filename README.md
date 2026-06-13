@@ -380,7 +380,7 @@ Itbaa is available under **dual licensing**:
 
 For details on both licensing options, see [LICENSING.md](LICENSING.md).
 
-**Commercial licensing inquiries:** <ahmedrowaihi@sudorw.com>
+**Commercial licensing inquiries:** <developer@ahmedrowaihi.lol>
 
 This project uses [Ladybird](https://github.com/LadybirdBrowser/ladybird) (BSD 2-Clause) - see [NOTICE](NOTICE) for third-party attributions.
 
@@ -395,7 +395,7 @@ If you find Itbaa useful, consider supporting its development:
 ## Author
 
 sudorw ([@ahmedrowaihi](https://github.com/ahmedrowaihi))  
-<ahmedrowaihi@sudorw.com>
+<developer@ahmedrowaihi.lol>
 
 ## Acknowledgments
 

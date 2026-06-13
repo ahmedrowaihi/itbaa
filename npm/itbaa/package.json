@@ -22,7 +22,7 @@
     "directory": "npm/itbaa"
   },
   "license": "Apache-2.0",
-  "author": "sudorw <ahmedrowaihi@sudorw.com>",
+  "author": "sudorw <developer@ahmedrowaihi.lol>",
   "type": "module",
   "exports": {
     ".": {

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Itbaa (اطبع) Build Script
-# Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
+# Copyright (c) 2025, sudorw <developer@ahmedrowaihi.lol>
 
 set -e
 
