@@ -17,7 +17,7 @@ ahmedrowaihi/ladybird-itbaa @ itbaa ─→ apply patches/001-itbaa.patch ─→ 
 ## Local build
 
 ```bash
-./build.sh --variant arabic --static
+./build.sh --static
 
 # binary: ladybird/Build/itbaa-static/bin/itbaa
 ./ladybird/Build/itbaa-static/bin/itbaa render input.html output.pdf
@@ -41,23 +41,23 @@ Then verify it still applies on a pristine base:
 
 ```bash
 git stash; git checkout -- .; git clean -fd
-git apply --check ../patches/001-itbaa.patch   # must succeed for BOTH variants
+git apply --check ../patches/001-itbaa.patch
 ```
 
-CI (`.github/workflows/ci.yml`) runs exactly this check against both the fork and upstream `master` on every push, so the patch keeps applying on both.
+CI (`.github/workflows/ci.yml`) runs this check against both the fork and upstream `master` on every push, so the patch keeps applying on both.
 
 ## Refreshing the Arabic fix onto newer Ladybird
 
-The fork's `upstream` branch is rebased onto upstream periodically so the patch keeps applying on a modern base.
+The fork's `itbaa` branch is rebased onto upstream periodically so the patch keeps applying on a modern base.
 
 ```bash
 # in a clone of ahmedrowaihi/ladybird-itbaa with upstream remote
 git remote add upstream https://github.com/LadybirdBrowser/ladybird.git   # once
 git fetch upstream
-git checkout upstream                  # the Arabic-only branch
+git checkout itbaa                     # the Arabic-only branch
 git rebase upstream/master             # replay the bidi commit onto latest
 # resolve LibWeb/Layout conflicts, then: git rebase --continue
-git push origin upstream --force-with-lease
+git push origin itbaa --force-with-lease
 ```
 
 After this the same `patches/001-itbaa.patch` may need refreshing if upstream moved the files it touches (`vcpkg.json`, `Utilities/CMakeLists.txt`, `CMakePresets.json`, `Meta/CMake/presets/CMakeUnixPresets.json`). Re-run the regenerate + `--check` steps above.

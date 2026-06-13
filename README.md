@@ -93,44 +93,29 @@ extract it, and place the binary on your `PATH`.
 
 ## Performance
 
-Benchmark results comparing Itbaa with Playwright and Puppeteer on a simple HTML document (10 iterations):
+Simple HTML, 10 iterations. itbaa drives the engine directly — no headless browser to spawn:
 
-| Tool       | Time (ms) [min-max]       | Binary Size |
-| ---------- | ------------------------- | ----------- |
-| **Itbaa**  | 111.66 (73.45-446.15)     | 118~240 MB  |
-| Playwright | 717.92 (657.29-1178.56)   | ~516 MB     |
-| Puppeteer  | 1667.35 (1317.29-4559.41) | ~1.9 GB     |
+| Tool       | Time (ms) [min–max]       | Footprint |
+| ---------- | ------------------------- | --------- |
+| **Itbaa**  | 111.66 (73–446)           | ~120 MB   |
+| Playwright | 717.92 (657–1179)         | ~516 MB   |
+| Puppeteer  | 1667.35 (1317–4559)       | ~1.9 GB   |
 
-**Itbaa is 6.43x faster than Playwright and 14.93x faster than Puppeteer** with a smaller footprint (118 MB standalone vs 516 MB+ for Playwright and 1.9 GB+ for Puppeteer including Chromium). Itbaa uses Ladybird's lightweight rendering engine directly (no browser overhead) and is compiled C++ for native performance.
+~6× faster than Playwright, ~15× than Puppeteer.
 
 ## Quick Start
 
 ### Prerequisites
 
-**For building:**
+**Running a prebuilt binary** — macOS: nothing. Linux: `libstdc++6`, `libgcc-s1` (+ `libatomic1` on arm64). Everything else (fontconfig, freetype, harfbuzz, base fonts) is statically built in.
 
-- macOS 14+ or Linux
-- CMake 3.25+
-- Ninja
-- Clang/LLVM 18+
+```bash
+sudo apt-get install libstdc++6 libgcc-s1   # Debian/Ubuntu; + libatomic1 on arm64
+```
 
-**For running pre-built binaries:**
+Optional: a font package (e.g. `fonts-liberation`) for documents relying on common system families.
 
-- Linux: `libstdc++6`, `libgcc-s1` — and `libatomic1` on **arm64** only. These are the
-  only hard requirements (fontconfig, freetype, and harfbuzz are statically built in).
-
-    ```bash
-    # Debian/Ubuntu
-    sudo apt-get install libstdc++6 libgcc-s1   # + libatomic1 on arm64
-
-    # CentOS/RHEL
-    sudo yum install libstdc++ libgcc           # + libatomic on arm64
-    ```
-
-    Optional: install a font package (e.g. `fonts-liberation`) for documents that rely on
-    common system font families — the binary bundles fonts for basic text either way.
-
-- macOS: No additional dependencies (all libraries included)
+**Building from source** — macOS 14+ or Linux, CMake 3.25+, Ninja, Clang/LLVM 18+.
 
 ### Build
 
@@ -244,77 +229,29 @@ npx skills add ahmedrowaihi/itbaa
 Use `--list` to preview, `--copy` to vendor it instead of symlinking, or add `--agent <name>`
 to target a specific agent.
 
-## Fonts and Consistency
+## Fonts
 
-Itbaa ensures **identical PDF output regardless of which platform generates the PDF**. A PDF created on macOS looks exactly the same as one created on Linux, and renders identically wherever it is viewed. (Binaries are provided for macOS and Linux.)
+Output is identical across macOS and Linux because bundled fonts load first; system fonts only fill missing glyphs. Font resolution order:
 
-### Font Loading Priority
+1. HTML `@font-face` (local file or base64/data URI) — wins on matching `font-family`.
+2. Bundled fonts (`SerenitySans`, `NotoEmoji`) — same on every platform.
+3. System fonts — fallback coverage only.
 
-1. **HTML `@font-face` fonts** (highest priority)
-    - Fonts specified in your HTML via `@font-face` rules are automatically loaded
-    - These take priority over all other fonts for matching `font-family` names
-    - Supports local files (`file://` / relative paths) and base64-encoded (data URI) fonts
+> **Offline by design.** itbaa never fetches over the network — fonts, images, and
+> stylesheets must be local files or embedded (base64 / data URI). A remote `http(s)` URL
+> fails to load and stalls the render until `--timeout` before falling back.
 
-> **Offline by design.** Itbaa does not fetch assets over the network — fonts, images,
-> and stylesheets must be local files or embedded (base64 / data URI). A remote
-> `http(s)` URL will fail to load and make the render wait out `--timeout` before
-> falling back, so reference assets locally.
-
-2. **Bundled fonts** (loaded FIRST for consistency)
-    - `NotoEmoji.ttf` - Emoji support (consistent across all platforms)
-    - `SerenitySans-Regular.ttf` - Default sans-serif font
-    - **These fonts are the same on macOS, Linux, and Windows**
-    - By loading bundled fonts first, PDFs generated on any platform will use the same fonts
-
-3. **System fonts** (loaded as fallback)
-    - **macOS**: `/System/Library/Fonts`, `/Library/Fonts`, `~/Library/Fonts`
-    - **Linux**: System font directories (via fontconfig or standard paths)
-    - System fonts provide additional glyph and fallback coverage
-    - Only used if bundled fonts don't have the required glyphs
-
-### Using Custom Fonts
-
-**Option 1: `@font-face` in HTML (Recommended)**
+Embed a custom font (works offline, identical everywhere) via `@font-face`:
 
 ```html
 <style>
-    @font-face {
-        font-family: "MyFont";
-        src: url("path/to/font.ttf") format("truetype");
-    }
-    body {
-        font-family: "MyFont", sans-serif;
-    }
+  @font-face { font-family: "MyFont"; src: url("./font.ttf") format("truetype"); }
+  /* or src: url("data:font/woff2;base64,d09GMgAB...") format("woff2"); */
+  body { font-family: "MyFont", sans-serif; }
 </style>
 ```
 
-**Option 2: base64 / data URI (fully self-contained)**
-
-```html
-<style>
-    @font-face {
-        font-family: "MyFont";
-        src: url("data:font/woff2;base64,d09GMgAB...") format("woff2");
-    }
-</style>
-```
-
-**For consistent color emoji**, download a color emoji font (e.g. Noto Color Emoji or
-Apple Color Emoji) ahead of time and reference the **local file**:
-
-```html
-<style>
-    @font-face {
-        font-family: "Color Emoji";
-        src: url("./AppleColorEmoji.ttf") format("truetype");
-    }
-    body {
-        font-family: -apple-system, "Color Emoji", sans-serif;
-    }
-</style>
-```
-
-Bundling the font locally keeps emoji identical across platforms (and works offline).
+For color emoji, bundle a local color-emoji font (Noto Color Emoji, Apple Color Emoji) the same way.
 
 ## Building for Distribution
 
