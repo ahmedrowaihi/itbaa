@@ -360,6 +360,25 @@ jobs:
 
             Run `itbaa help` for the full flag reference.
 
+            ### Node.js / npm
+
+            The prebuilt binary ships per-platform (`os`/`cpu`-gated optional dependency) —
+            no compile step, no postinstall download:
+
+            ```bash
+            npm install @ahmedrowaihi/itbaa
+            ```
+
+            ```js
+            import { from, fromFiles } from "@ahmedrowaihi/itbaa";
+
+            const pdf = await from("<h1>أهلا Hello</h1>").toBuffer({ singlePage: true });
+            from(html).toStream().pipe(res);                 // stream to an HTTP response / S3
+            await fromFiles(["./invoices"]).toDir("./pdfs"); // batch a folder, one engine
+            ```
+
+            Package (incl. the `itbaa` CLI): https://www.npmjs.com/package/@ahmedrowaihi/itbaa
+
             ### Downloads
 
             | Platform | Arch | File |
