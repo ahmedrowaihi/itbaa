@@ -19,11 +19,11 @@ jobs:
     name: ${{ matrix.variant.name }} ${{ matrix.target.os }}-${{ matrix.target.arch }}
     runs-on: ${{ matrix.target.runner }}
 
-    # Point vcpkg at the cached binary dir so built dependencies persist across runs. Without this
-    # vcpkg writes to its default ~/.cache/vcpkg (uncached) and every run rebuilds all deps in Configure.
+    # vcpkg binary cache lives in a GitHub Packages NuGet feed (a registry, not ref-scoped), so every
+    # run — including tag-triggered releases — restores prebuilt deps instead of rebuilding in Configure.
     env:
       LADYBIRD_SOURCE_DIR: ${{ github.workspace }}/ladybird
-      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/ladybird/Build/caches/vcpkg-binary-cache,readwrite"
+      VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/ahmedrowaihi/index.json,readwrite"
 
     strategy:
       fail-fast: false # vanilla and arabic fail independently; ship whatever is green
@@ -96,8 +96,8 @@ jobs:
           # only compile itbaa-cli, so Qt is never actually built/linked.
           sudo apt-get install -y autoconf autoconf-archive automake build-essential \
             ccache cmake curl fonts-liberation2 gcc-14 g++-14 git libcurl4-openssl-dev \
-            libdrm-dev libgl1-mesa-dev libssl-dev libstdc++-14-dev libtool nasm \
-            ninja-build pkg-config python3-venv qt6-base-dev qt6-tools-dev-tools \
+            libdrm-dev libgl1-mesa-dev libssl-dev libstdc++-14-dev libtool mono-complete \
+            nasm ninja-build pkg-config python3-venv qt6-base-dev qt6-tools-dev-tools \
             qt6-wayland tar unzip zip
 
           if [ "${{ matrix.target.toolchain }}" == "Clang" ]; then
@@ -116,7 +116,7 @@ jobs:
         run: |
           brew update
           brew install autoconf autoconf-archive automake bash ccache cmake coreutils \
-            libtool llvm@20 nasm ninja pkg-config unzip
+            libtool llvm@20 mono nasm ninja pkg-config unzip
 
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1
@@ -126,30 +126,21 @@ jobs:
           key: ${{ matrix.variant.name }}-${{ matrix.target.os }}-${{ matrix.target.arch }}
           max-size: 3G
 
-      - name: Create cache directories
-        run: mkdir -p ladybird/Build/caches/vcpkg-binary-cache
-
-      - name: Restore vcpkg binary cache
-        uses: actions/cache/restore@v4
-        id: vcpkg-cache
-        with:
-          path: ladybird/Build/caches/vcpkg-binary-cache
-          # Keyed on vcpkg.json content (set identically by the itbaa patch), so the
-          # dependency build is shared across variants whenever the baseline matches.
-          key: vcpkg-${{ matrix.target.os }}-${{ matrix.target.arch }}-${{ hashFiles('ladybird/vcpkg.json') }}
-          restore-keys: vcpkg-${{ matrix.target.os }}-${{ matrix.target.arch }}-
-
       - name: Setup vcpkg
         working-directory: ladybird
         run: ./Meta/Utils/build_vcpkg.py
 
-      - name: Save vcpkg binary cache
-        uses: actions/cache/save@v4
-        if: always() && steps.vcpkg-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        with:
-          path: ladybird/Build/caches/vcpkg-binary-cache
-          key: vcpkg-${{ matrix.target.os }}-${{ matrix.target.arch }}-${{ hashFiles('ladybird/vcpkg.json') }}
+      # Point vcpkg's nuget at the GitHub Packages feed (the binary cache). nuget.exe runs under mono.
+      - name: Authenticate vcpkg binary cache (GitHub Packages)
+        env:
+          VCPKG_EXE: ${{ github.workspace }}/ladybird/Build/vcpkg/vcpkg
+          FEED_URL: https://nuget.pkg.github.com/ahmedrowaihi/index.json
+          CACHE_TOKEN: ${{ secrets.VCPKG_CACHE_TOKEN }}
+        run: |
+          nuget="$("$VCPKG_EXE" fetch nuget | tail -n1)"
+          mono "$nuget" sources add -Source "$FEED_URL" -StorePasswordInClearText \
+            -Name GitHubPackages -UserName ahmedrowaihi -Password "$CACHE_TOKEN"
+          mono "$nuget" setapikey "$CACHE_TOKEN" -Source "$FEED_URL"
 
       - name: Set compiler (Linux GNU)
         if: matrix.target.os == 'linux' && matrix.target.toolchain == 'GNU'
