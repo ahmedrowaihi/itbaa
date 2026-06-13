@@ -4,19 +4,16 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Commercial License](https://img.shields.io/badge/Commercial_License-Available-green.svg)](LICENSING.md)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/ahmedrowaihi?style=social)](https://github.com/sponsors/ahmedrowaihi)
 
-**Itbaa** (اطبع - Arabic for "Print") is a high-quality HTML to PDF conversion library and CLI tool built on [Ladybird](https://github.com/LadybirdBrowser/ladybird)'s rendering engine.
+**Itbaa** (اطبع, Arabic for "print") converts HTML to PDF, PNG, or JPEG via the
+[Ladybird](https://github.com/LadybirdBrowser/ladybird) engine — no headless browser, no network.
 
-## Features
-
-- **Vector PDF output** - True vector PDFs with selectable text and embedded fonts
-- **Image output** - Render to PNG or JPEG, or to a single tall "no-cut" page that never splits content across page breaks
-- **Full CSS rendering** - Flexbox, grid, transforms, gradients, box/text shadows, and nested layers all paint correctly
-- **Font support** - `@font-face` web fonts (local files or base64) plus bundled and system fallbacks
-- **International text** - RTL languages (Arabic, Hebrew) and complex scripts, with a bidirectional-text fix on top of upstream
-- **Raster images** - Embeds PNG/JPEG assets (e.g. logos) directly from disk
-- **Batch & scripting** - Convert folders or many files at once; JSON/NDJSON output for pipelines
-- **C API** - Easy integration with Node.js, Python, and other languages
-- **High Performance** - 6.43x faster than Playwright, 14.93x faster than Puppeteer
+- **Vector PDF** (selectable text, embedded fonts), **PNG/JPEG**, or one tall **no-cut** page.
+- **Full CSS** — flexbox, grid, transforms, gradients, shadows, nested layers.
+- **Fonts & images** — `@font-face` (local/base64) + system fallback; embedded raster assets.
+- **Arabic/RTL** — bidirectional-text fix on top of upstream Ladybird.
+- **Batch** folders/files; `--format json`/NDJSON for scripts.
+- **C API** and an **[npm package](npm/itbaa/)** for Node.
+- ~6× faster than Playwright, ~15× than Puppeteer ([below](#performance)).
 
 ## Install
 
