@@ -1,0 +1,31 @@
+#!/bin/bash
+# Lambda custom runtime. Event: { html, singlePage?, to?: pdf|png|jpg } -> base64 document.
+set -uo pipefail
+API="http://${AWS_LAMBDA_RUNTIME_API}/2018-06-01/runtime"
+
+while true; do
+  headers="$(mktemp)"
+  event="$(curl -sS -LD "$headers" "$API/invocation/next")"
+  req_id="$(grep -Fi 'Lambda-Runtime-Aws-Request-Id:' "$headers" | tr -d '\r' | awk '{print $2}')"
+
+  html="$(printf '%s' "$event" | jq -r '.html // empty')"
+  to="$(printf '%s' "$event" | jq -r '.to // "pdf"')"
+  single="$(printf '%s' "$event" | jq -r 'if .singlePage then "--single-page" else "" end')"
+
+  if [ -z "$html" ]; then
+    curl -sS "$API/invocation/$req_id/response" -d '{"statusCode":400,"body":"missing html"}' >/dev/null
+    continue
+  fi
+
+  printf '%s' "$html" > /tmp/in.html
+  if itbaa render /tmp/in.html "/tmp/out.$to" $single --quiet 2>/tmp/err; then
+    ctype="application/pdf"; [ "$to" = png ] && ctype="image/png"; [ "$to" = jpg ] && ctype="image/jpeg"
+    base64 -w0 "/tmp/out.$to" > /tmp/out.b64
+    # via files, not argv: a base64 image exceeds ARG_MAX (128 KB/arg)
+    jq -nc --rawfile b /tmp/out.b64 --arg c "$ctype" \
+      '{statusCode:200,headers:{"Content-Type":$c},isBase64Encoded:true,body:($b|rtrimstr("\n"))}' > /tmp/resp.json
+  else
+    jq -nc --rawfile e /tmp/err '{statusCode:500,body:$e}' > /tmp/resp.json
+  fi
+  curl -sS "$API/invocation/$req_id/response" --data-binary @/tmp/resp.json >/dev/null
+done

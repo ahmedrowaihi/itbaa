@@ -1,0 +1,5 @@
+{
+  "html": "<!doctype html><html><body style=\"font-family:sans-serif;padding:40px\"><h1>أهلا Hello from Lambda</h1><p>Rendered by <b>itbaa</b> — no browser, no cold-start Chromium.</p></body></html>",
+  "singlePage": true,
+  "to": "pdf"
+}
