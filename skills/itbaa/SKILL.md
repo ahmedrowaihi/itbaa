@@ -21,9 +21,8 @@ command -v itbaa || curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/it
 itbaa version
 ```
 
-Variants: the installer defaults to `arabic` (includes a bidirectional/Arabic text fix);
-use `ITBAA_VARIANT=vanilla` for upstream-only. Linux needs glibc (Debian/Ubuntu/RHEL,
-not Alpine) and `libstdc++6 libgcc-s1` (`+ libatomic1` on arm64).
+The build is upstream Ladybird plus a bidirectional/Arabic text fix. Linux needs glibc
+(Debian/Ubuntu/RHEL, not Alpine) and `libstdc++6 libgcc-s1` (`+ libatomic1` on arm64).
 
 ## 2. Core usage
 

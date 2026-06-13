@@ -2,34 +2,29 @@
 
 ## Architecture
 
-Itbaa is the **same patch applied to two Ladybird bases**, shipped as two equal binaries.
+Itbaa is the itbaa patch applied to a Ladybird fork (latest upstream + a bidirectional/Arabic
+text fix), shipped as one binary per platform.
 
 ```
-LadybirdBrowser/ladybird @ master ─────────┐
-                                           ├─ apply patches/001-itbaa.patch ─→ build ─→ itbaa-vanilla-*
-ahmedrowaihi/ladybird-itbaa @ upstream ────┘ (same patch)                            ─→ itbaa-arabic-*
+ahmedrowaihi/ladybird-itbaa @ itbaa ─→ apply patches/001-itbaa.patch ─→ build ─→ itbaa-arabic-*
         ↑ latest upstream + the bidi/Arabic fix commit
 ```
 
 - **This repo (`ahmedrowaihi/itbaa`)** owns the printer app: `patches/001-itbaa.patch` (the `Utilities/Itbaa/*` sources + build wiring) plus the build/release CI. It is the single source of truth for the itbaa code.
-- **The fork (`ahmedrowaihi/ladybird-itbaa`), branch `upstream`** owns the Arabic fix only: latest Ladybird with one bidirectional-text commit on top. Nothing itbaa-specific lives there.
-- There is **no pinned commit**. Each variant tracks its branch HEAD; the resolved SHA is stamped into release notes for traceability.
+- **The fork (`ahmedrowaihi/ladybird-itbaa`), branch `itbaa`** owns the Arabic fix only: latest Ladybird with one bidirectional-text commit on top. Nothing itbaa-specific lives there.
+- There is **no pinned commit**. The build tracks the branch HEAD; the resolved SHA is stamped into release notes for traceability. (The patch is also kept applying on `LadybirdBrowser/ladybird@master`, so upstream compile breakage is easy to spot.)
 
 ## Local build
 
 ```bash
-# arabic variant (default): fork upstream branch + itbaa patch
 ./build.sh --variant arabic --static
-
-# vanilla variant: upstream master + itbaa patch
-./build.sh --variant vanilla --static
 
 # binary: ladybird/Build/itbaa-static/bin/itbaa
 ./ladybird/Build/itbaa-static/bin/itbaa render input.html output.pdf
 ./ladybird/Build/itbaa-static/bin/itbaa info input.html
 ```
 
-`build.sh` clones the right base, applies `patches/*.patch`, configures the `Itbaa_Static` preset, and builds `itbaa-cli`.
+`build.sh` clones the fork, applies `patches/*.patch`, configures the `Itbaa_Static` preset, and builds `itbaa-cli`.
 
 ## Changing the itbaa app (regenerate the patch)
 
@@ -49,7 +44,7 @@ git stash; git checkout -- .; git clean -fd
 git apply --check ../patches/001-itbaa.patch   # must succeed for BOTH variants
 ```
 
-CI (`.github/workflows/ci.yml`) runs exactly this check against vanilla **and** arabic on every push.
+CI (`.github/workflows/ci.yml`) runs exactly this check against both the fork and upstream `master` on every push, so the patch keeps applying on both.
 
 ## Refreshing the Arabic fix onto newer Ladybird
 
@@ -69,7 +64,7 @@ After this the same `patches/001-itbaa.patch` may need refreshing if upstream mo
 
 ## Releasing
 
-Push a `v*` tag (or run the **Release** workflow manually). It builds `variant × os × arch` (vanilla/arabic × linux-x86_64/linux-arm64/macos-arm64), then publishes a GitHub release with all six binaries, `SHA256SUMS`, and per-variant Ladybird commit provenance.
+Push a `v*` tag (or run the **Release** workflow manually). It builds the fork for each target (linux-x86_64 / linux-arm64 / macos-arm64), then publishes a GitHub release with the three binaries, `install.sh`, `SHA256SUMS`, and the resolved Ladybird commit. A single failed binary fails the whole release (no partial publish).
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0
@@ -102,4 +97,4 @@ It draws to the SkPDF page `SkCanvas&` rather than a `Gfx::PaintingSurface`, whi
 
 Gradients (emitted as native PDF shadings), box/text shadows, and nested display lists are fully painted; SkPDF rasterizes effects it can't express as vector. Image/PNG/JPEG and raster-PDF modes reuse the same recorded picture. Non-PDF commands (`draw_video_frame`, `compositor_*`, `paint_scrollbar`) are no-op stubs. SVG pattern fills and `backdrop-filter` are the remaining approximations.
 
-When upstream reshapes the DisplayList model, the **vanilla** CI build is the canary — it surfaces the exact compile errors against current LibWeb, independently of the Arabic rebase.
+When upstream reshapes the DisplayList model, the `ci.yml` patch-apply check against `LadybirdBrowser/ladybird@master` is the early signal that the patch needs refreshing for current LibWeb.

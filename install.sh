@@ -4,8 +4,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh | sh
 #
 # Environment overrides:
-#   ITBAA_VARIANT      arabic | vanilla            (default: arabic)
-#   ITBAA_VERSION      release tag, e.g. v1.0.0    (default: latest)
+#   ITBAA_VERSION      release tag, e.g. v1.1.0    (default: latest)
 #   ITBAA_INSTALL_DIR  install directory           (default: /usr/local/bin)
 #   ITBAA_BIN_NAME     installed binary name       (default: itbaa)
 #
@@ -15,7 +14,6 @@
 set -eu
 
 REPO="ahmedrowaihi/itbaa"
-VARIANT="${ITBAA_VARIANT:-arabic}"
 VERSION="${ITBAA_VERSION:-latest}"
 INSTALL_DIR="${ITBAA_INSTALL_DIR:-/usr/local/bin}"
 BIN_NAME="${ITBAA_BIN_NAME:-itbaa}"
@@ -103,26 +101,15 @@ install() {
     detect_platform
     resolve_version
 
-    case "$VARIANT" in
-    vanilla | arabic) ;;
-    *) err "unknown variant '$VARIANT' (use vanilla or arabic)" ;;
-    esac
-
     base="https://github.com/$REPO/releases/download/$VERSION"
-    # v1.0.0+ embeds the variant in the asset name; older releases (vanilla only) do not.
-    asset="itbaa-$VARIANT-$OS-$ARCH.$EXT"
-    legacy="itbaa-$OS-$ARCH.$EXT"
+    asset="itbaa-arabic-$OS-$ARCH.$EXT"
 
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
 
-    info "downloading $VARIANT $VERSION for $OS-$ARCH"
+    info "downloading $VERSION for $OS-$ARCH"
     if ! download "$base/$asset" "$tmp/pkg" 2>/dev/null; then
-        if [ "$VARIANT" = "vanilla" ] && download "$base/$legacy" "$tmp/pkg" 2>/dev/null; then
-            asset="$legacy"
-        else
-            err "no $VARIANT build for $OS-$ARCH in $VERSION (looked for $asset)"
-        fi
+        err "no build for $OS-$ARCH in $VERSION (looked for $asset)"
     fi
 
     (
@@ -153,7 +140,7 @@ install() {
     # Clear macOS quarantine so Gatekeeper doesn't block the downloaded binary.
     [ "$OS" = "macos" ] && as_root xattr -d com.apple.quarantine "$dest" 2>/dev/null || true
 
-    info "installed $VERSION ($VARIANT) -> $dest"
+    info "installed $VERSION -> $dest"
     case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
     *) info "note: $INSTALL_DIR is not on your PATH" ;;

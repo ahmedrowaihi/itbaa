@@ -12,18 +12,11 @@
 - **Image output** - Render to PNG or JPEG, or to a single tall "no-cut" page that never splits content across page breaks
 - **Full CSS rendering** - Flexbox, grid, transforms, gradients, box/text shadows, and nested layers all paint correctly
 - **Font support** - `@font-face` web fonts (local files or base64) plus bundled and system fallbacks
-- **International text** - RTL languages (Arabic, Hebrew) and complex scripts; an `arabic` variant adds a bidirectional-text fix
+- **International text** - RTL languages (Arabic, Hebrew) and complex scripts, with a bidirectional-text fix on top of upstream
 - **Raster images** - Embeds PNG/JPEG assets (e.g. logos) directly from disk
 - **Batch & scripting** - Convert folders or many files at once; JSON/NDJSON output for pipelines
 - **C API** - Easy integration with Node.js, Python, and other languages
 - **High Performance** - 6.43x faster than Playwright, 14.93x faster than Puppeteer
-
-## Variants
-
-Each release ships two interchangeable builds — pick whichever rendering you need:
-
-- **vanilla** — latest upstream Ladybird, unmodified.
-- **arabic** — upstream + a bidirectional/Arabic text fix (correct word order and shaping for mixed Arabic/English).
 
 ## Install
 
@@ -33,18 +26,18 @@ Each release ships two interchangeable builds — pick whichever rendering you n
 curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh | sh
 ```
 
-Installs the latest **arabic** build to `/usr/local/bin/itbaa`. Override with environment variables:
+Installs the latest build (upstream Ladybird + a bidirectional/Arabic text fix) to
+`/usr/local/bin/itbaa`. Override with environment variables:
 
 ```bash
-# vanilla variant, a pinned version, or a custom location
+# a pinned version, or a custom location
 curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh \
-  | ITBAA_VARIANT=vanilla ITBAA_VERSION=v1.0.0 ITBAA_INSTALL_DIR="$HOME/.local/bin" sh
+  | ITBAA_VERSION=v1.1.0 ITBAA_INSTALL_DIR="$HOME/.local/bin" sh
 ```
 
-| Variable            | Default          | Description                  |
+| Variable            | Default          | Description                   |
 | ------------------- | ---------------- | ---------------------------- |
-| `ITBAA_VARIANT`     | `arabic`         | `arabic` or `vanilla`        |
-| `ITBAA_VERSION`     | `latest`         | A release tag, e.g. `v1.0.0` |
+| `ITBAA_VERSION`     | `latest`         | A release tag, e.g. `v1.1.0` |
 | `ITBAA_INSTALL_DIR` | `/usr/local/bin` | Where to install the binary  |
 
 Uninstall:
@@ -357,9 +350,8 @@ Upstream Ladybird has a known limitation with bidirectional (BiDi) text that can
 affect Arabic, Hebrew, and other RTL languages — word order or spacing may be
 wrong in some cases ([LadybirdBrowser/ladybird#7288](https://github.com/LadybirdBrowser/ladybird/issues/7288)).
 
-The **arabic** release variant is built with a bidirectional-text fix on top of
-upstream and renders mixed Arabic/English correctly. Use the **vanilla** variant
-if you don't need it; the two are otherwise identical.
+itbaa is built on upstream Ladybird **plus a bidirectional-text fix**, so it renders
+mixed Arabic/English correctly.
 
 ## History
 
