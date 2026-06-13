@@ -1,14 +1,14 @@
 diff --git a/.gitignore b/.gitignore
-index 40e75a3e05..41a7c8a6cf 100644
+index 8ff9ab1bfd9..9d29f6ebafc 100644
 --- a/.gitignore
 +++ b/.gitignore
-@@ -63,3 +63,4 @@ Meta/CMake/vcpkg/user-variables.cmake
+@@ -64,3 +64,4 @@ Meta/CMake/vcpkg/user-variables.cmake
  .DS_Store
  
  __pycache__
 +itbaa-dist/
 diff --git a/CMakePresets.json b/CMakePresets.json
-index 2fc895a32a..ab4c984667 100644
+index 2fc895a32aa..ab4c9846672 100644
 --- a/CMakePresets.json
 +++ b/CMakePresets.json
 @@ -29,6 +29,20 @@
@@ -33,7 +33,7 @@ index 2fc895a32a..ab4c984667 100644
    ],
    "testPresets": [
 diff --git a/Meta/CMake/presets/CMakeUnixPresets.json b/Meta/CMake/presets/CMakeUnixPresets.json
-index ea7d9039a7..489a158d67 100644
+index ea7d9039a75..161666f5a57 100644
 --- a/Meta/CMake/presets/CMakeUnixPresets.json
 +++ b/Meta/CMake/presets/CMakeUnixPresets.json
 @@ -55,6 +55,32 @@
@@ -46,7 +46,7 @@ index ea7d9039a7..489a158d67 100644
 +      "inherits": "unix_base",
 +      "displayName": "Itbaa (اطبع) Build",
 +      "description": "Itbaa - HTML to PDF conversion library and CLI",
-+      "binaryDir": "${fileDir}/Build/itbaa",
++      "binaryDir": "$env{LADYBIRD_SOURCE_DIR}/Build/itbaa",
 +      "cacheVariables": {
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
@@ -58,49 +58,53 @@ index ea7d9039a7..489a158d67 100644
 +      "inherits": "unix_base",
 +      "displayName": "Itbaa (اطبع) Static Build",
 +      "description": "Itbaa - Static distribution build",
-+      "binaryDir": "${fileDir}/Build/itbaa-static",
++      "binaryDir": "$env{LADYBIRD_SOURCE_DIR}/Build/itbaa-static",
 +      "cacheVariables": {
 +        "BUILD_SHARED_LIBS": "OFF",
 +        "CMAKE_BUILD_TYPE": "Release",
 +        "ENABLE_QT": "OFF",
 +        "ENABLE_GUI_TARGETS": "ON",
-+        "VCPKG_OVERLAY_TRIPLETS": "${fileDir}/Meta/CMake/vcpkg/distribution-triplets"
++        "VCPKG_OVERLAY_TRIPLETS": "$env{LADYBIRD_SOURCE_DIR}/Meta/CMake/vcpkg/distribution-triplets"
 +      }
      }
    ],
    "buildPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index 0cf3746f19..35fc5583c4 100644
+index caa5dadebd4..5691c66d80c 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
-@@ -22,6 +22,62 @@ endif()
- 
- lagom_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSystem LibGC)
+@@ -21,6 +21,66 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
+ ladybird_utility(dump-html-tokens SOURCES dump-html-tokens.cpp LIBS LibMain LibWeb)
+ ladybird_utility(dump-html-tree SOURCES dump-html-tree.cpp LIBS LibMain LibWeb LibJS LibGC LibGfx LibIPC LibURL)
  
 +# ============================================================================
 +# Itbaa (اطبع) - HTML to PDF Library and CLI
 +# Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
 +# ============================================================================
-+include(skia)
 +
 +# Itbaa Core Library (static)
 +add_library(itbaa STATIC
 +    Itbaa/lib/Itbaa.cpp
 +    Itbaa/lib/Renderer.cpp
 +    Itbaa/lib/PDFWriter.cpp
++    Itbaa/lib/ImageWriter.cpp
 +    Itbaa/lib/DisplayListPlayerPDF.cpp
++    Itbaa/lib/InProcessImageCodecPlugin.cpp
++    Itbaa/lib/PageRange.cpp
++    Itbaa/lib/RequestClientFactory.cpp
 +)
 +
-+target_include_directories(itbaa PUBLIC 
++target_include_directories(itbaa PUBLIC
 +    ${CMAKE_CURRENT_SOURCE_DIR}/Itbaa/lib
 +    ${CMAKE_SOURCE_DIR}
 +    ${CMAKE_BINARY_DIR}/Lagom/Libraries
 +)
 +
 +target_link_libraries(itbaa PUBLIC
-+    LibWeb 
-+    LibGfx 
-+    LibCore 
++    LibWeb
++    LibGfx
++    LibImageDecoders
++    LibCore
 +    LibJS
 +    LibGC
 +    LibIPC
@@ -117,15 +121,15 @@ index 0cf3746f19..35fc5583c4 100644
 +)
 +
 +# Itbaa CLI Tool
-+lagom_utility(itbaa-cli
-+    SOURCES 
++ladybird_utility(itbaa-cli
++    SOURCES
 +        Itbaa/cli/main.cpp
-+    LIBS 
++    LIBS
 +        itbaa
 +        LibMain
 +)
 +
-+target_include_directories(itbaa-cli PRIVATE 
++target_include_directories(itbaa-cli PRIVATE
 +    ${CMAKE_CURRENT_SOURCE_DIR}/Itbaa/lib
 +)
 +
@@ -136,7 +140,7 @@ index 0cf3746f19..35fc5583c4 100644
  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      include(CheckCSourceCompiles)
      # Check for musl's declaration of __assert_fail
-@@ -61,10 +117,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -60,10 +120,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
      install(TARGETS wasm COMPONENT wasm)
      install(FILES "${GIT_COMMIT_FILE}" COMPONENT wasm DESTINATION .)
  
@@ -154,7 +158,7 @@ index 0cf3746f19..35fc5583c4 100644
      set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
      if (APPLE)
          if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES AND "x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-@@ -78,6 +140,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -77,6 +143,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
  
      set(CPACK_ARCHIVE_JS_FILE_NAME "ladybird-js-${CPACK_SYSTEM_NAME}")
      set(CPACK_ARCHIVE_WASM_FILE_NAME "ladybird-wasm-${CPACK_SYSTEM_NAME}")
@@ -164,202 +168,533 @@ index 0cf3746f19..35fc5583c4 100644
  endif()
 diff --git a/Utilities/Itbaa/cli/main.cpp b/Utilities/Itbaa/cli/main.cpp
 new file mode 100644
-index 0000000000..8a973d4176
+index 00000000000..c6e7a616961
 --- /dev/null
 +++ b/Utilities/Itbaa/cli/main.cpp
-@@ -0,0 +1,186 @@
+@@ -0,0 +1,517 @@
 +/*
-+ * Itbaa (اطبع) - HTML to PDF CLI Tool
++ * Itbaa (اطبع) - HTML to PDF CLI
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
 + * SPDX-License-Identifier: BSD-2-Clause
 + */
 +
 +#include "Itbaa.h"
++#include <AK/ByteString.h>
++#include <AK/LexicalPath.h>
++#include <AK/QuickSort.h>
++#include <AK/Vector.h>
++#include <LibCore/DirIterator.h>
++#include <LibCore/System.h>
++#include <LibFileSystem/FileSystem.h>
 +#include <cstdio>
 +#include <cstdlib>
 +#include <cstring>
++#include <fcntl.h>
++#include <unistd.h>
 +
-+static void print_usage(char const* program)
++namespace {
++
++enum class Format {
++    Human,
++    Json,
++};
++
++enum class Verbosity {
++    Quiet,
++    Normal,
++    Verbose,
++};
++
++struct Options {
++    Format format { Format::Human };
++    Verbosity verbosity { Verbosity::Normal };
++    ItbaaOptions render { itbaa_default_options() };
++    unsigned timeout { 0 };
++    char const* out_dir { nullptr };
++    char const* to { nullptr }; // Derived-output extension for batch: pdf | png | jpg
++};
++
++// True when a name ends in an extension we render to (selects explicit-pair vs derived outputs).
++bool is_output_name(StringView name)
 +{
-+    printf("Itbaa (اطبع) - HTML to PDF Converter v%s\n", itbaa_version());
-+    printf("Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>\n\n");
-+    printf("Usage: %s [OPTIONS] <input.html> [output.pdf]\n\n", program);
++    return name.ends_with(".pdf"sv, CaseSensitivity::CaseInsensitive)
++        || name.ends_with(".png"sv, CaseSensitivity::CaseInsensitive)
++        || name.ends_with(".jpg"sv, CaseSensitivity::CaseInsensitive)
++        || name.ends_with(".jpeg"sv, CaseSensitivity::CaseInsensitive);
++}
++
++bool is_image_name(StringView name)
++{
++    return name.ends_with(".png"sv, CaseSensitivity::CaseInsensitive)
++        || name.ends_with(".jpg"sv, CaseSensitivity::CaseInsensitive)
++        || name.ends_with(".jpeg"sv, CaseSensitivity::CaseInsensitive);
++}
++
++// Redirects the engine's stderr diagnostics to /dev/null for its lifetime unless --verbose.
++class StderrSilencer {
++public:
++    explicit StderrSilencer(bool silence)
++    {
++        if (!silence)
++            return;
++        int devnull = open("/dev/null", O_WRONLY);
++        if (devnull < 0)
++            return;
++        m_saved = dup(STDERR_FILENO);
++        if (m_saved >= 0)
++            dup2(devnull, STDERR_FILENO);
++        close(devnull);
++    }
++    ~StderrSilencer()
++    {
++        if (m_saved >= 0) {
++            dup2(m_saved, STDERR_FILENO);
++            close(m_saved);
++        }
++    }
++    StderrSilencer(StderrSilencer const&) = delete;
++    StderrSilencer& operator=(StderrSilencer const&) = delete;
++
++private:
++    int m_saved { -1 };
++};
++
++void json_print_string(char const* s)
++{
++    putchar('"');
++    for (; s && *s; ++s) {
++        switch (*s) {
++        case '"':
++            fputs("\\\"", stdout);
++            break;
++        case '\\':
++            fputs("\\\\", stdout);
++            break;
++        case '\n':
++            fputs("\\n", stdout);
++            break;
++        case '\r':
++            fputs("\\r", stdout);
++            break;
++        case '\t':
++            fputs("\\t", stdout);
++            break;
++        default:
++            if ((unsigned char)*s < 0x20)
++                printf("\\u%04x", (unsigned char)*s);
++            else
++                putchar(*s);
++        }
++    }
++    putchar('"');
++}
++
++// Reports an error as JSON on stdout or a plain line on stderr; always returns 1.
++int report_error(Options const& o, ItbaaError err, char const* context)
++{
++    char const* message = itbaa_error_string(err);
++    if (o.format == Format::Json) {
++        printf("{\"ok\":false,\"code\":%d,\"message\":", (int)err);
++        if (context) {
++            // Combine "context: message" into one JSON string.
++            char buffer[1024];
++            snprintf(buffer, sizeof(buffer), "%s: %s", context, message);
++            json_print_string(buffer);
++        } else {
++            json_print_string(message);
++        }
++        fputs("}\n", stdout);
++    } else if (context) {
++        fprintf(stderr, "error: %s: %s\n", context, message);
++    } else {
++        fprintf(stderr, "error: %s\n", message);
++    }
++    return 1;
++}
++
++void print_usage()
++{
++    printf("itbaa %s - HTML to PDF, powered by Ladybird\n\n", itbaa_version());
++    printf("Usage:\n");
++    printf("  itbaa render <input.html> [output.pdf|.png|.jpg] [options]\n");
++    printf("  itbaa render <input.html>... [--out-dir DIR] [--to FMT] [options]\n");
++    printf("  itbaa render <folder> [--out-dir DIR] [--to FMT] [options]\n");
++    printf("  itbaa info   <input.html> [options]\n");
++    printf("  itbaa version | help\n\n");
++    printf("Render takes one or many inputs (files or a folder). With one input and an\n");
++    printf("explicit output, that name is used; otherwise output names are derived (<name>.<fmt>).\n");
++    printf("The output extension selects the format: .pdf, .png or .jpg.\n\n");
 +    printf("Options:\n");
-+    printf("  -i, --info         Show document info without generating PDF\n");
-+    printf("  -p, --pages <N>    Maximum number of pages (default: all)\n");
-+    printf("  -w, --width <N>    Page width in pixels (default: 794 for A4)\n");
-+    printf("  -h, --height <N>   Page height in pixels (default: 1123 for A4)\n");
-+    printf("  -s, --size <SIZE>  Page size preset: a4, letter, legal, a3\n");
++    printf("  --pages <RANGE>    Pages to render: 3, 2-5, 3-, -4, 1,3,5-7 (default: all)\n");
++    printf("  --single-page      One tall page, no page breaks (avoids cut content)\n");
++    printf("  --raster           Embed pages as images in the PDF (no selectable text)\n");
++    printf("  --scale <N>        Resolution multiplier for image/raster output (default: 2)\n");
++    printf("  --to <FMT>         Derived-output format for batch: pdf | png | jpg\n");
++    printf("  --out-dir <DIR>    Write derived outputs into DIR (batch)\n");
++    printf("  --size <PRESET>    a4 | letter | legal | a3 (default: a4)\n");
++    printf("  --width <PX>       Custom page width (overrides --size)\n");
++    printf("  --height <PX>      Custom page height (overrides --size)\n");
 +    printf("  --no-full-page     Don't capture full scrollable content\n");
-+    printf("  --version          Show version information\n");
-+    printf("  --help             Show this help message\n\n");
-+    printf("Examples:\n");
-+    printf("  %s document.html output.pdf\n", program);
-+    printf("  %s --info document.html\n", program);
-+    printf("  %s -p 5 --size letter document.html output.pdf\n", program);
++    printf("  --timeout <SEC>    Max seconds to wait for resources (default: 10)\n");
++    printf("  --format <FMT>     Output format: human | json (default: human)\n");
++    printf("  -q, --quiet        Suppress diagnostics and success lines\n");
++    printf("  -v, --verbose      Show engine diagnostics\n");
++    printf("  -h, --help         Show this help\n");
 +}
 +
-+static void print_version()
++// Parses one shared option at argv[i], advancing i past any value.
++// Returns 1 if consumed, 0 if not a known flag, -1 on a malformed flag.
++int parse_option(int argc, char** argv, int& i, Options& o)
 +{
-+    printf("Itbaa (اطبع) v%s\n", itbaa_version());
-+    printf("HTML to PDF Converter built on Ladybird\n");
-+    printf("Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>\n");
++    char const* arg = argv[i];
++
++    auto value = [&](char const** out) {
++        if (i + 1 >= argc)
++            return false;
++        *out = argv[++i];
++        return true;
++    };
++
++    if (strcmp(arg, "--format") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        if (strcmp(v, "json") == 0)
++            o.format = Format::Json;
++        else if (strcmp(v, "human") == 0)
++            o.format = Format::Human;
++        else
++            return -1;
++        return 1;
++    }
++    if (strcmp(arg, "-q") == 0 || strcmp(arg, "--quiet") == 0) {
++        o.verbosity = Verbosity::Quiet;
++        return 1;
++    }
++    if (strcmp(arg, "-v") == 0 || strcmp(arg, "--verbose") == 0) {
++        o.verbosity = Verbosity::Verbose;
++        return 1;
++    }
++    if (strcmp(arg, "--pages") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        o.render.pages = v;
++        return 1;
++    }
++    if (strcmp(arg, "--size") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        if (strcmp(v, "a4") == 0)
++            o.render.page_size = ITBAA_PAGE_A4;
++        else if (strcmp(v, "letter") == 0)
++            o.render.page_size = ITBAA_PAGE_LETTER;
++        else if (strcmp(v, "legal") == 0)
++            o.render.page_size = ITBAA_PAGE_LEGAL;
++        else if (strcmp(v, "a3") == 0)
++            o.render.page_size = ITBAA_PAGE_A3;
++        else
++            return -1;
++        return 1;
++    }
++    if (strcmp(arg, "--width") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        o.render.width = (uint32_t)atoi(v);
++        o.render.page_size = ITBAA_PAGE_CUSTOM;
++        return 1;
++    }
++    if (strcmp(arg, "--height") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        o.render.height = (uint32_t)atoi(v);
++        o.render.page_size = ITBAA_PAGE_CUSTOM;
++        return 1;
++    }
++    if (strcmp(arg, "--no-full-page") == 0) {
++        o.render.full_page = 0;
++        return 1;
++    }
++    if (strcmp(arg, "--single-page") == 0) {
++        o.render.single_page = 1;
++        return 1;
++    }
++    if (strcmp(arg, "--raster") == 0) {
++        o.render.rasterize = 1;
++        return 1;
++    }
++    if (strcmp(arg, "--scale") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        o.render.scale = (float)atof(v);
++        return 1;
++    }
++    if (strcmp(arg, "--to") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        if (strcmp(v, "pdf") != 0 && strcmp(v, "png") != 0 && strcmp(v, "jpg") != 0 && strcmp(v, "jpeg") != 0)
++            return -1;
++        o.to = v;
++        return 1;
++    }
++    if (strcmp(arg, "--timeout") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        o.timeout = (unsigned)atoi(v);
++        return 1;
++    }
++    if (strcmp(arg, "--out-dir") == 0) {
++        char const* v;
++        if (!value(&v))
++            return -1;
++        o.out_dir = v;
++        return 1;
++    }
++    return 0;
 +}
++
++// Collects shared options and all positional arguments.
++int parse_args(int argc, char** argv, Options& o, Vector<char const*>& positionals)
++{
++    for (int i = 1; i < argc; i++) {
++        int consumed = parse_option(argc, argv, i, o);
++        if (consumed == -1) {
++            fprintf(stderr, "error: invalid value for option '%s'\n", argv[i]);
++            return 1;
++        }
++        if (consumed == 1)
++            continue;
++        if (argv[i][0] == '-') {
++            fprintf(stderr, "error: unknown option '%s'\n", argv[i]);
++            return 1;
++        }
++        positionals.append(argv[i]);
++    }
++    return 0;
++}
++
++struct Job {
++    ByteString input;
++    ByteString output;
++};
++
++ByteString derive_output(StringView input, char const* out_dir, char const* ext)
++{
++    LexicalPath path { input };
++    auto name = ByteString::formatted("{}.{}", path.title(), ext ? ext : "pdf");
++    return LexicalPath::join(out_dir ? StringView { out_dir, strlen(out_dir) } : path.dirname(), name).string();
++}
++
++// Expands a positional into input files: an *.html/*.htm folder listing, or the file itself.
++Vector<ByteString> expand_input(StringView path)
++{
++    Vector<ByteString> files;
++    if (FileSystem::is_directory(path)) {
++        Core::DirIterator it { path, Core::DirIterator::SkipParentAndBaseDir };
++        while (it.has_next()) {
++            auto name = it.next_path();
++            if (name.ends_with(".html"sv) || name.ends_with(".htm"sv))
++                files.append(LexicalPath::join(path, name).string());
++        }
++        quick_sort(files);
++    } else {
++        files.append(path);
++    }
++    return files;
++}
++
++// Builds the input->output jobs from positionals:
++//  --out-dir set      -> every input, outputs derived into out_dir
++//  <in> <out.pdf>     -> a single explicit pair
++//  otherwise          -> every input, output derived next to it
++Vector<Job> resolve_jobs(Vector<char const*> const& positionals, char const* out_dir, char const* ext)
++{
++    Vector<Job> jobs;
++    bool explicit_pair = !out_dir && positionals.size() == 2 && is_output_name({ positionals[1], strlen(positionals[1]) });
++    if (explicit_pair) {
++        jobs.append({ positionals[0], positionals[1] });
++        return jobs;
++    }
++    for (auto* positional : positionals) {
++        for (auto& file : expand_input({ positional, strlen(positional) }))
++            jobs.append({ file, derive_output(file, out_dir, ext) });
++    }
++    return jobs;
++}
++
++void emit_job_result(Options const& o, Job const& job, ItbaaError err, ItbaaDocumentInfo const& info)
++{
++    if (o.format == Format::Json) {
++        if (err == ITBAA_OK) {
++            fputs("{\"ok\":true,\"input\":", stdout);
++            json_print_string(job.input.characters());
++            fputs(",\"output\":", stdout);
++            json_print_string(job.output.characters());
++            printf(",\"pages\":%u,\"page_width\":%u,\"page_height\":%u}\n", info.page_count, info.page_width, info.page_height);
++        } else {
++            fputs("{\"ok\":false,\"input\":", stdout);
++            json_print_string(job.input.characters());
++            printf(",\"code\":%d,\"message\":", (int)err);
++            json_print_string(itbaa_error_string(err));
++            fputs("}\n", stdout);
++        }
++    } else if (err != ITBAA_OK) {
++        fprintf(stderr, "error: %s: %s\n", job.input.characters(), itbaa_error_string(err));
++    } else if (o.verbosity != Verbosity::Quiet) {
++        printf("rendered %u page(s) -> %s\n", info.page_count, job.output.characters());
++    }
++}
++
++int cmd_render(int argc, char** argv)
++{
++    Options o;
++    Vector<char const*> positionals;
++    if (parse_args(argc, argv, o, positionals) != 0)
++        return 1;
++    if (positionals.is_empty()) {
++        fprintf(stderr, "error: usage: itbaa render <input.html> [output.pdf] [--out-dir DIR]\n");
++        return 1;
++    }
++
++    auto jobs = resolve_jobs(positionals, o.out_dir, o.to);
++    if (jobs.is_empty()) {
++        fprintf(stderr, "error: no input files found\n");
++        return 1;
++    }
++    if (o.out_dir) {
++        StringView dir { o.out_dir, strlen(o.out_dir) };
++        if (!FileSystem::is_directory(dir) && Core::System::mkdir(dir, 0755).is_error()) {
++            fprintf(stderr, "error: cannot create output directory '%s'\n", o.out_dir);
++            return 1;
++        }
++    }
++
++    if (ItbaaError err = itbaa_init(); err != ITBAA_OK)
++        return report_error(o, err, "init");
++    if (o.timeout > 0)
++        itbaa_set_timeout(o.timeout);
++
++    int failures = 0;
++    for (auto& job : jobs) {
++        ItbaaContext* ctx = itbaa_context_create();
++        if (!ctx) {
++            emit_job_result(o, job, ITBAA_ERROR_MEMORY_ALLOCATION, {});
++            ++failures;
++            continue;
++        }
++        bool image_output = is_image_name({ job.output.characters(), job.output.length() });
++        ItbaaOptions render = o.render;
++        if (image_output)
++            render.single_page = 1;
++
++        ItbaaError err;
++        ItbaaDocumentInfo info {};
++        {
++            StderrSilencer silence(o.verbosity != Verbosity::Verbose);
++            err = itbaa_load_html_file(ctx, job.input.characters());
++            if (err == ITBAA_OK)
++                err = image_output
++                    ? itbaa_render_to_image_file(ctx, &render, job.output.characters())
++                    : itbaa_convert_to_file(ctx, &render, job.output.characters());
++            if (err == ITBAA_OK)
++                itbaa_get_info(ctx, &render, &info);
++        }
++        itbaa_context_destroy(ctx);
++        emit_job_result(o, job, err, info);
++        if (err != ITBAA_OK)
++            ++failures;
++    }
++    itbaa_shutdown();
++    return failures == 0 ? 0 : 1;
++}
++
++int cmd_info(int argc, char** argv)
++{
++    Options o;
++    Vector<char const*> positionals;
++    if (parse_args(argc, argv, o, positionals) != 0)
++        return 1;
++    if (positionals.size() != 1) {
++        fprintf(stderr, "error: usage: itbaa info <input.html>\n");
++        return 1;
++    }
++    char const* input = positionals[0];
++
++    if (ItbaaError err = itbaa_init(); err != ITBAA_OK)
++        return report_error(o, err, "init");
++    if (o.timeout > 0)
++        itbaa_set_timeout(o.timeout);
++
++    ItbaaContext* ctx = itbaa_context_create();
++    if (!ctx) {
++        itbaa_shutdown();
++        return report_error(o, ITBAA_ERROR_MEMORY_ALLOCATION, "context");
++    }
++
++    ItbaaError err;
++    ItbaaDocumentInfo info {};
++    {
++        StderrSilencer silence(o.verbosity != Verbosity::Verbose);
++        err = itbaa_load_html_file(ctx, input);
++        if (err == ITBAA_OK)
++            err = itbaa_get_info(ctx, &o.render, &info);
++    }
++    itbaa_context_destroy(ctx);
++    itbaa_shutdown();
++
++    if (err != ITBAA_OK)
++        return report_error(o, err, input);
++
++    if (o.format == Format::Json) {
++        printf("{\"ok\":true,\"pages\":%u,\"content_width\":%u,\"content_height\":%u,\"page_width\":%u,\"page_height\":%u}\n",
++            info.page_count, info.content_width, info.content_height, info.page_width, info.page_height);
++    } else {
++        printf("pages:   %u\n", info.page_count);
++        printf("content: %ux%u\n", info.content_width, info.content_height);
++        printf("page:    %ux%u\n", info.page_width, info.page_height);
++    }
++    return 0;
++}
++
++} // namespace
 +
 +int main(int argc, char* argv[])
 +{
 +    if (argc < 2) {
-+        print_usage(argv[0]);
++        print_usage();
 +        return 1;
 +    }
 +
-+    // Parse arguments
-+    char const* input_path = nullptr;
-+    char const* output_path = nullptr;
-+    ItbaaOptions options = itbaa_default_options();
-+    bool info_only = false;
-+
-+    for (int i = 1; i < argc; i++) {
-+        if (strcmp(argv[i], "--help") == 0) {
-+            print_usage(argv[0]);
-+            return 0;
-+        }
-+        if (strcmp(argv[i], "--version") == 0) {
-+            print_version();
-+            return 0;
-+        }
-+        if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--info") == 0) {
-+            info_only = true;
-+            continue;
-+        }
-+        if (strcmp(argv[i], "--no-full-page") == 0) {
-+            options.full_page = 0;
-+            continue;
-+        }
-+        if ((strcmp(argv[i], "-p") == 0 || strcmp(argv[i], "--pages") == 0) && i + 1 < argc) {
-+            options.max_pages = atoi(argv[++i]);
-+            continue;
-+        }
-+        if ((strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--width") == 0) && i + 1 < argc) {
-+            options.width = atoi(argv[++i]);
-+            options.page_size = ITBAA_PAGE_CUSTOM;
-+            continue;
-+        }
-+        if ((strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--height") == 0) && i + 1 < argc) {
-+            options.height = atoi(argv[++i]);
-+            options.page_size = ITBAA_PAGE_CUSTOM;
-+            continue;
-+        }
-+        if ((strcmp(argv[i], "-s") == 0 || strcmp(argv[i], "--size") == 0) && i + 1 < argc) {
-+            char const* size = argv[++i];
-+            if (strcmp(size, "a4") == 0)
-+                options.page_size = ITBAA_PAGE_A4;
-+            else if (strcmp(size, "letter") == 0)
-+                options.page_size = ITBAA_PAGE_LETTER;
-+            else if (strcmp(size, "legal") == 0)
-+                options.page_size = ITBAA_PAGE_LEGAL;
-+            else if (strcmp(size, "a3") == 0)
-+                options.page_size = ITBAA_PAGE_A3;
-+            else {
-+                fprintf(stderr, "Unknown page size: %s\n", size);
-+                return 1;
-+            }
-+            continue;
-+        }
-+        // Positional arguments
-+        if (argv[i][0] != '-') {
-+            if (!input_path)
-+                input_path = argv[i];
-+            else if (!output_path)
-+                output_path = argv[i];
-+            continue;
-+        }
-+        fprintf(stderr, "Unknown option: %s\n", argv[i]);
-+        return 1;
++    char const* command = argv[1];
++    if (strcmp(command, "render") == 0)
++        return cmd_render(argc - 1, argv + 1);
++    if (strcmp(command, "info") == 0)
++        return cmd_info(argc - 1, argv + 1);
++    if (strcmp(command, "version") == 0 || strcmp(command, "--version") == 0) {
++        printf("itbaa %s\n", itbaa_version());
++        return 0;
++    }
++    if (strcmp(command, "help") == 0 || strcmp(command, "--help") == 0 || strcmp(command, "-h") == 0) {
++        print_usage();
++        return 0;
 +    }
 +
-+    if (!input_path) {
-+        fprintf(stderr, "Error: Input file required\n");
-+        print_usage(argv[0]);
-+        return 1;
-+    }
-+
-+    if (!info_only && !output_path) {
-+        fprintf(stderr, "Error: Output file required (or use --info)\n");
-+        return 1;
-+    }
-+
-+    // Initialize library
-+    ItbaaError err = itbaa_init();
-+    if (err != ITBAA_OK) {
-+        fprintf(stderr, "Error: Failed to initialize: %s\n", itbaa_error_string(err));
-+        return 1;
-+    }
-+
-+    // Create context
-+    ItbaaContext* ctx = itbaa_context_create();
-+    if (!ctx) {
-+        fprintf(stderr, "Error: Failed to create context\n");
-+        itbaa_shutdown();
-+        return 1;
-+    }
-+
-+    // Load HTML
-+    err = itbaa_load_html_file(ctx, input_path);
-+    if (err != ITBAA_OK) {
-+        fprintf(stderr, "Error: %s: %s\n", input_path, itbaa_error_string(err));
-+        itbaa_context_destroy(ctx);
-+        itbaa_shutdown();
-+        return 1;
-+    }
-+
-+    if (info_only) {
-+        // Show document info
-+        ItbaaDocumentInfo info;
-+        err = itbaa_get_info(ctx, &options, &info);
-+        if (err != ITBAA_OK) {
-+            fprintf(stderr, "Error: %s\n", itbaa_error_string(err));
-+            itbaa_context_destroy(ctx);
-+            itbaa_shutdown();
-+            return 1;
-+        }
-+        printf("Document: %s\n", input_path);
-+        printf("  Pages: %u\n", info.page_count);
-+        printf("  Content size: %ux%u pixels\n", info.content_width, info.content_height);
-+        printf("  Page size: %ux%u pixels\n", options.width, options.height);
-+    } else {
-+        // Convert to PDF
-+        err = itbaa_convert_to_file(ctx, &options, output_path);
-+        if (err != ITBAA_OK) {
-+            if (err == ITBAA_ERROR_FILE_WRITE) {
-+                fprintf(stderr, "Error: Failed to write PDF file '%s': %s\n", output_path, itbaa_error_string(err));
-+                fprintf(stderr, "  Check that:\n");
-+                fprintf(stderr, "  - The directory exists and is writable\n");
-+                fprintf(stderr, "  - You have write permissions for the file\n");
-+                fprintf(stderr, "  - There is sufficient disk space\n");
-+            } else {
-+                fprintf(stderr, "Error: %s\n", itbaa_error_string(err));
-+            }
-+            itbaa_context_destroy(ctx);
-+            itbaa_shutdown();
-+            return 1;
-+        }
-+
-+        ItbaaDocumentInfo info;
-+        itbaa_get_info(ctx, &options, &info);
-+        printf("Generated %u page(s) -> %s\n", info.page_count, output_path);
-+    }
-+
-+    itbaa_context_destroy(ctx);
-+    itbaa_shutdown();
-+    return 0;
++    fprintf(stderr, "error: unknown command '%s'\n\n", command);
++    print_usage();
++    return 1;
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
 new file mode 100644
-index 0000000000..1e5ecbd2ea
+index 00000000000..fb768b3144b
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.cpp
-@@ -0,0 +1,311 @@
+@@ -0,0 +1,504 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -370,22 +705,33 @@ index 0000000000..1e5ecbd2ea
 +
 +#include "DisplayListPlayerPDF.h"
 +
++#include <core/SkBlurTypes.h>
 +#include <core/SkCanvas.h>
++#include <core/SkColorSpace.h>
 +#include <core/SkFont.h>
++#include <core/SkMaskFilter.h>
 +#include <core/SkPaint.h>
 +#include <core/SkPath.h>
 +#include <core/SkRRect.h>
++#include <core/SkTextBlob.h>
 +#include <effects/SkDashPathEffect.h>
++#include <effects/SkGradientShader.h>
++#include <effects/SkImageFilters.h>
++#include <pathops/SkPathOps.h>
 +
 +#include <LibGfx/Font/Font.h>
-+#include <LibGfx/ImmutableBitmap.h>
++#include <LibGfx/Gradients.h>
++#include <LibGfx/PaintingSurface.h>
 +#include <LibGfx/PathSkia.h>
 +#include <LibGfx/SkiaUtils.h>
 +#include <LibWeb/Painting/DisplayListCommand.h>
++#include <LibWeb/Painting/DisplayListResourceStorage.h>
 +
 +namespace Itbaa {
 +
-+static SkRRect to_skia_rrect(auto const& rect, Web::Painting::CornerRadii const& corner_radii)
++using namespace Web::Painting;
++
++static SkRRect to_skia_rrect(auto const& rect, Gfx::CornerRadii const& corner_radii)
 +{
 +    SkRRect rrect;
 +    SkVector radii[4];
@@ -393,7 +739,7 @@ index 0000000000..1e5ecbd2ea
 +    radii[1].set(corner_radii.top_right.horizontal_radius, corner_radii.top_right.vertical_radius);
 +    radii[2].set(corner_radii.bottom_right.horizontal_radius, corner_radii.bottom_right.vertical_radius);
 +    radii[3].set(corner_radii.bottom_left.horizontal_radius, corner_radii.bottom_left.vertical_radius);
-+    rrect.setRectRadii(to_skia_rect(rect), radii);
++    rrect.setRectRadii(Gfx::to_skia_rect(rect), radii);
 +    return rrect;
 +}
 +
@@ -406,277 +752,459 @@ index 0000000000..1e5ecbd2ea
 +        matrix.elements()[3][0], matrix.elements()[3][1], matrix.elements()[3][2], matrix.elements()[3][3]);
 +}
 +
-+DisplayListPlayerPDF::DisplayListPlayerPDF(SkCanvas& canvas)
-+    : m_canvas(canvas)
++static Vector<SkColor4f> to_skia_gradient_colors(ReadonlySpan<Gfx::Color> color_stop_colors)
 +{
++    Vector<SkColor4f> colors;
++    colors.ensure_capacity(color_stop_colors.size());
++    for (auto color : color_stop_colors)
++        colors.unchecked_append(Gfx::to_skia_color4f(color));
++    return colors;
 +}
 +
-+void DisplayListPlayerPDF::execute(Web::Painting::DisplayList& display_list)
++static SkGradientShader::Interpolation to_skia_interpolation(Gfx::GradientInterpolationMethod interpolation_method)
 +{
-+    using namespace Web::Painting;
++    SkGradientShader::Interpolation interpolation;
 +
-+    for (auto const& command_with_scroll : display_list.commands()) {
-+        auto const& command = command_with_scroll.command;
++    if (interpolation_method.type == Gfx::GradientInterpolationMethod::Type::Rectangular) {
++        switch (interpolation_method.rectangular_color_space) {
++        case Gfx::RectangularColorSpace::Srgb:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kSRGB;
++            break;
++        case Gfx::RectangularColorSpace::SrgbLinear:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kSRGBLinear;
++            break;
++        case Gfx::RectangularColorSpace::Lab:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kLab;
++            break;
++        case Gfx::RectangularColorSpace::Oklab:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kOKLab;
++            break;
++        case Gfx::RectangularColorSpace::DisplayP3:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kDisplayP3;
++            break;
++        case Gfx::RectangularColorSpace::A98Rgb:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kA98RGB;
++            break;
++        case Gfx::RectangularColorSpace::ProphotoRgb:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kProphotoRGB;
++            break;
++        case Gfx::RectangularColorSpace::Rec2020:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kRec2020;
++            break;
++        case Gfx::RectangularColorSpace::DisplayP3Linear:
++        case Gfx::RectangularColorSpace::XyzD50:
++        case Gfx::RectangularColorSpace::XyzD65:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kOKLab;
++            break;
++        case Gfx::RectangularColorSpace::Xyz:
++            VERIFY_NOT_REACHED();
++        }
++    } else {
++        switch (interpolation_method.polar_color_space) {
++        case Gfx::PolarColorSpace::Hsl:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kHSL;
++            break;
++        case Gfx::PolarColorSpace::Hwb:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kHWB;
++            break;
++        case Gfx::PolarColorSpace::Lch:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kLCH;
++            break;
++        case Gfx::PolarColorSpace::Oklch:
++            interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kOKLCH;
++            break;
++        }
 +
-+        command.visit(
-+            [&](DrawGlyphRun const& cmd) { draw_glyph_run(cmd); },
-+            [&](FillRect const& cmd) { fill_rect(cmd); },
-+            [&](DrawScaledImmutableBitmap const& cmd) { draw_scaled_immutable_bitmap(cmd); },
-+            [&](AddClipRect const& cmd) { add_clip_rect(cmd); },
-+            [&](Save const&) { save(); },
-+            [&](SaveLayer const&) { save_layer(); },
-+            [&](Restore const&) { restore(); },
-+            [&](Translate const& cmd) { translate(cmd); },
-+            [&](PushStackingContext const& cmd) { push_stacking_context(cmd); },
-+            [&](PopStackingContext const&) { pop_stacking_context(); },
-+            [&](FillRectWithRoundedCorners const& cmd) { fill_rect_with_rounded_corners(cmd); },
-+            [&](FillPath const& cmd) { fill_path(cmd); },
-+            [&](StrokePath const& cmd) { stroke_path(cmd); },
-+            [&](DrawEllipse const& cmd) { draw_ellipse(cmd); },
-+            [&](FillEllipse const& cmd) { fill_ellipse(cmd); },
-+            [&](DrawLine const& cmd) { draw_line(cmd); },
-+            [&](DrawRect const& cmd) { draw_rect(cmd); },
-+            [&](AddRoundedRectClip const& cmd) { add_rounded_rect_clip(cmd); },
-+            [&](ApplyOpacity const& cmd) { apply_opacity(cmd); },
-+            [&](ApplyTransform const& cmd) { apply_transform(cmd); },
-+            [&](auto const&) { /* Skip unsupported commands */ });
++        switch (interpolation_method.hue_interpolation_method) {
++        case Gfx::HueInterpolationMethod::Shorter:
++            interpolation.fHueMethod = SkGradientShader::Interpolation::HueMethod::kShorter;
++            break;
++        case Gfx::HueInterpolationMethod::Longer:
++            interpolation.fHueMethod = SkGradientShader::Interpolation::HueMethod::kLonger;
++            break;
++        case Gfx::HueInterpolationMethod::Increasing:
++            interpolation.fHueMethod = SkGradientShader::Interpolation::HueMethod::kIncreasing;
++            break;
++        case Gfx::HueInterpolationMethod::Decreasing:
++            interpolation.fHueMethod = SkGradientShader::Interpolation::HueMethod::kDecreasing;
++            break;
++        }
 +    }
++
++    interpolation.fInPremul = SkGradientShader::Interpolation::InPremul::kYes;
++    return interpolation;
 +}
 +
-+void DisplayListPlayerPDF::draw_glyph_run(Web::Painting::DrawGlyphRun const& command)
++Gfx::Path DisplayListPlayerPDF::path_from_data(DisplayListDataSpan path_data) const
 +{
-+    auto const& gfx_font = command.glyph_run->font();
-+    auto sk_font = gfx_font.skia_font(command.scale);
++    return Gfx::Path::from_serialized_bytes(inline_data(path_data));
++}
 +
-+    auto glyph_count = command.glyph_run->glyphs().size();
-+    Vector<SkGlyphID> glyphs;
-+    glyphs.ensure_capacity(glyph_count);
-+    Vector<SkPoint> positions;
-+    positions.ensure_capacity(glyph_count);
-+    auto font_ascent = gfx_font.pixel_metrics().ascent;
++void DisplayListPlayerPDF::draw_glyph_run(DrawGlyphRun const& command)
++{
++    auto const& font = resource_storage().font(command.font_id);
++    auto glyphs = inline_objects<DisplayListGlyph>(command.glyphs);
++    if (glyphs.is_empty())
++        return;
 +
-+    for (auto const& glyph : command.glyph_run->glyphs()) {
-+        auto transformed_glyph = glyph;
-+        transformed_glyph.position.set_y(glyph.position.y() + font_ascent);
-+        transformed_glyph.position = transformed_glyph.position.scaled(command.scale);
-+        auto const& point = transformed_glyph.position;
-+        glyphs.append(transformed_glyph.glyph_id);
-+        positions.append(to_skia_point(point));
++    auto sk_font = font.skia_font(command.scale);
++    SkTextBlobBuilder builder;
++    auto const& run = builder.allocRunPos(sk_font, glyphs.size());
++
++    auto font_ascent = font.pixel_metrics().ascent;
++    for (size_t i = 0; i < glyphs.size(); ++i) {
++        run.glyphs[i] = glyphs[i].glyph_id;
++        run.pos[i * 2] = glyphs[i].position.x() * command.scale;
++        run.pos[i * 2 + 1] = (glyphs[i].position.y() + font_ascent) * command.scale;
 +    }
++
++    auto blob = builder.make();
++    if (!blob)
++        return;
 +
 +    SkPaint paint;
-+    paint.setColor(to_skia_color(command.color));
++    paint.setColor(Gfx::to_skia_color(command.color));
++    auto const& translation = command.translation;
 +
 +    switch (command.orientation) {
 +    case Gfx::Orientation::Horizontal:
-+        canvas().drawGlyphs(glyphs.size(), glyphs.data(), positions.data(), to_skia_point(command.translation), sk_font, paint);
++        canvas().drawTextBlob(blob.get(), translation.x(), translation.y(), paint);
 +        break;
 +    case Gfx::Orientation::Vertical:
 +        canvas().save();
 +        canvas().translate(command.rect.width(), 0);
 +        canvas().rotate(90, command.rect.top_left().x(), command.rect.top_left().y());
-+        canvas().drawGlyphs(glyphs.size(), glyphs.data(), positions.data(), to_skia_point(command.translation), sk_font, paint);
++        canvas().drawTextBlob(blob.get(), translation.x(), translation.y(), paint);
 +        canvas().restore();
 +        break;
 +    }
 +}
 +
-+void DisplayListPlayerPDF::fill_rect(Web::Painting::FillRect const& command)
++void DisplayListPlayerPDF::fill_rect(FillRect const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawRect(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawRect(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_scaled_immutable_bitmap(Web::Painting::DrawScaledImmutableBitmap const& command)
++void DisplayListPlayerPDF::draw_scaled_decoded_image_frame(DrawScaledDecodedImageFrame const& command)
 +{
-+    auto dst_rect = to_skia_rect(command.dst_rect);
-+    auto clip_rect = to_skia_rect(command.clip_rect);
++    auto const& frame = resource_storage().image_frame(command.frame_id);
++    auto image = m_image_cache.image_for_frame(frame);
++    if (!image)
++        return;
++
++    auto dst_rect = Gfx::to_skia_rect(command.dst_rect);
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    canvas().save();
-+    canvas().clipRect(clip_rect, true);
-+    canvas().drawImageRect(command.bitmap->sk_image(), dst_rect, to_skia_sampling_options(command.scaling_mode), &paint);
++    canvas().clipRect(dst_rect, true);
++    canvas().drawImageRect(image.get(), dst_rect, Gfx::to_skia_sampling_options(command.scaling_mode), &paint);
 +    canvas().restore();
 +}
 +
-+void DisplayListPlayerPDF::add_clip_rect(Web::Painting::AddClipRect const& command)
++void DisplayListPlayerPDF::draw_repeated_decoded_image_frame(DrawRepeatedDecodedImageFrame const& command)
 +{
-+    canvas().clipRect(to_skia_rect(command.rect), true);
++    auto const& frame = resource_storage().image_frame(command.frame_id);
++    auto image = m_image_cache.image_for_frame(frame);
++    if (!image)
++        return;
++
++    auto dst_rect = Gfx::to_skia_rect(command.dst_rect);
++    SkPaint paint;
++    paint.setAntiAlias(true);
++    canvas().save();
++    canvas().clipRect(Gfx::to_skia_rect(command.clip_rect), true);
++    canvas().drawImageRect(image.get(), dst_rect, Gfx::to_skia_sampling_options(command.scaling_mode), &paint);
++    canvas().restore();
 +}
 +
-+void DisplayListPlayerPDF::save()
++void DisplayListPlayerPDF::save(Save const&)
 +{
 +    canvas().save();
 +}
 +
-+void DisplayListPlayerPDF::save_layer()
++void DisplayListPlayerPDF::save_layer(SaveLayer const&)
 +{
 +    canvas().saveLayer(nullptr, nullptr);
 +}
 +
-+void DisplayListPlayerPDF::restore()
++void DisplayListPlayerPDF::restore(Restore const&)
 +{
 +    canvas().restore();
 +}
 +
-+void DisplayListPlayerPDF::translate(Web::Painting::Translate const& command)
++void DisplayListPlayerPDF::translate(Translate const& command)
 +{
 +    canvas().translate(command.delta.x(), command.delta.y());
 +}
 +
-+void DisplayListPlayerPDF::push_stacking_context(Web::Painting::PushStackingContext const& command)
++void DisplayListPlayerPDF::add_clip_rect(AddClipRect const& command)
 +{
-+    auto new_transform = Gfx::translation_matrix(Gfx::Vector3<float>(command.transform.origin.x(), command.transform.origin.y(), 0));
-+    new_transform = new_transform * command.transform.matrix;
-+    new_transform = new_transform * Gfx::translation_matrix(Gfx::Vector3<float>(-command.transform.origin.x(), -command.transform.origin.y(), 0));
-+    if (command.transform.parent_perspective_matrix.has_value())
-+        new_transform = command.transform.parent_perspective_matrix.value() * new_transform;
-+    auto matrix = to_skia_matrix4x4(new_transform);
-+
-+    canvas().save();
-+    if (command.clip_path.has_value())
-+        canvas().clipPath(to_skia_path(command.clip_path.value()), true);
-+    canvas().concat(matrix);
-+
-+    if (command.opacity < 1 || command.compositing_and_blending_operator != Gfx::CompositingAndBlendingOperator::Normal || command.isolate) {
-+        SkPaint paint;
-+        paint.setAlphaf(command.opacity);
-+        paint.setBlender(Gfx::to_skia_blender(command.compositing_and_blending_operator));
-+        if (command.bounding_rect.has_value()) {
-+            auto bounds = to_skia_rect(command.bounding_rect.value());
-+            canvas().saveLayer(bounds, &paint);
-+        } else {
-+            canvas().saveLayer(nullptr, &paint);
-+        }
-+    } else {
-+        canvas().save();
-+    }
++    canvas().clipRect(Gfx::to_skia_rect(command.rect), true);
 +}
 +
-+void DisplayListPlayerPDF::pop_stacking_context()
++void DisplayListPlayerPDF::fill_rect_with_rounded_corners(FillRectWithRoundedCorners const& command)
 +{
-+    canvas().restore();
-+    canvas().restore();
-+}
-+
-+void DisplayListPlayerPDF::fill_rect_with_rounded_corners(Web::Painting::FillRectWithRoundedCorners const& command)
-+{
-+    auto rounded_rect = to_skia_rrect(command.rect, command.corner_radii);
 +    SkPaint paint;
-+    paint.setColor(to_skia_color(command.color));
++    paint.setColor(Gfx::to_skia_color(command.color));
 +    paint.setAntiAlias(true);
-+    canvas().drawRRect(rounded_rect, paint);
++    canvas().drawRRect(to_skia_rrect(command.rect, command.corner_radii), paint);
 +}
 +
-+void DisplayListPlayerPDF::fill_path(Web::Painting::FillPath const& command)
++void DisplayListPlayerPDF::fill_path(FillPath const& command)
 +{
-+    auto path = to_skia_path(command.path);
++    auto path = Gfx::to_skia_path(path_from_data(command.path_data));
 +    path.setFillType(to_skia_path_fill_type(command.winding_rule));
 +
 +    SkPaint paint;
-+    if (command.paint_style_or_color.has<Web::Painting::PaintStyle>()) {
-+        // Simplified: just use a solid color for PDF
++    if (command.paint_kind == PathPaintKind::PaintStyle) {
++        // PDF backend doesn't resolve gradients/patterns; approximate with solid black.
 +        paint.setColor(SK_ColorBLACK);
 +        paint.setAlphaf(command.opacity);
 +    } else {
-+        auto const& color = command.paint_style_or_color.get<Gfx::Color>();
-+        paint.setColor(to_skia_color(color));
++        paint.setColor(Gfx::to_skia_color(command.color));
 +    }
-+    paint.setAntiAlias(command.should_anti_alias == Web::Painting::ShouldAntiAlias::Yes);
++    paint.setAntiAlias(command.should_anti_alias == Gfx::ShouldAntiAlias::Yes);
 +    canvas().drawPath(path, paint);
 +}
 +
-+void DisplayListPlayerPDF::stroke_path(Web::Painting::StrokePath const& command)
++void DisplayListPlayerPDF::stroke_path(StrokePath const& command)
 +{
-+    auto path = to_skia_path(command.path);
++    auto path = Gfx::to_skia_path(path_from_data(command.path_data));
 +    SkPaint paint;
-+    if (command.paint_style_or_color.has<Web::Painting::PaintStyle>()) {
++    if (command.paint_kind == PathPaintKind::PaintStyle) {
 +        paint.setColor(SK_ColorBLACK);
 +        paint.setAlphaf(command.opacity);
 +    } else {
-+        auto const& color = command.paint_style_or_color.get<Gfx::Color>();
-+        paint.setColor(to_skia_color(color));
++        paint.setColor(Gfx::to_skia_color(command.color));
 +    }
-+    paint.setAntiAlias(command.should_anti_alias == Web::Painting::ShouldAntiAlias::Yes);
++    paint.setAntiAlias(command.should_anti_alias == Gfx::ShouldAntiAlias::Yes);
 +    paint.setStyle(SkPaint::Style::kStroke_Style);
 +    paint.setStrokeWidth(command.thickness);
 +    paint.setStrokeCap(to_skia_cap(command.cap_style));
 +    paint.setStrokeJoin(to_skia_join(command.join_style));
 +    paint.setStrokeMiter(command.miter_limit);
-+    if (!command.dash_array.is_empty())
-+        paint.setPathEffect(SkDashPathEffect::Make(command.dash_array.data(), command.dash_array.size(), command.dash_offset));
++    auto dash_array = inline_objects<float>(command.dash_array);
++    if (!dash_array.is_empty())
++        paint.setPathEffect(SkDashPathEffect::Make(dash_array.data(), dash_array.size(), command.dash_offset));
 +    canvas().drawPath(path, paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_ellipse(Web::Painting::DrawEllipse const& command)
++void DisplayListPlayerPDF::draw_ellipse(DrawEllipse const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    paint.setStyle(SkPaint::kStroke_Style);
 +    paint.setStrokeWidth(command.thickness);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawOval(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawOval(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::fill_ellipse(Web::Painting::FillEllipse const& command)
++void DisplayListPlayerPDF::fill_ellipse(FillEllipse const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawOval(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawOval(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_line(Web::Painting::DrawLine const& command)
++void DisplayListPlayerPDF::draw_line(DrawLine const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    paint.setStyle(SkPaint::kStroke_Style);
 +    paint.setStrokeWidth(command.thickness);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawLine(to_skia_point(command.from.to_type<float>()), to_skia_point(command.to.to_type<float>()), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawLine(Gfx::to_skia_point(command.from.to_type<float>()), Gfx::to_skia_point(command.to.to_type<float>()), paint);
 +}
 +
-+void DisplayListPlayerPDF::draw_rect(Web::Painting::DrawRect const& command)
++void DisplayListPlayerPDF::draw_rect(DrawRect const& command)
 +{
 +    SkPaint paint;
 +    paint.setAntiAlias(true);
 +    paint.setStyle(SkPaint::kStroke_Style);
-+    paint.setColor(to_skia_color(command.color));
-+    canvas().drawRect(to_skia_rect(command.rect), paint);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    canvas().drawRect(Gfx::to_skia_rect(command.rect), paint);
 +}
 +
-+void DisplayListPlayerPDF::add_rounded_rect_clip(Web::Painting::AddRoundedRectClip const& command)
++void DisplayListPlayerPDF::add_rounded_rect_clip(AddRoundedRectClip const& command)
 +{
 +    auto rounded_rect = to_skia_rrect(command.border_rect, command.corner_radii);
-+    auto clip_op = command.corner_clip == Web::Painting::CornerClip::Inside ? SkClipOp::kDifference : SkClipOp::kIntersect;
++    auto clip_op = command.corner_clip == Gfx::CornerClip::Inside ? SkClipOp::kDifference : SkClipOp::kIntersect;
 +    canvas().clipRRect(rounded_rect, clip_op, true);
 +}
 +
-+void DisplayListPlayerPDF::apply_opacity(Web::Painting::ApplyOpacity const& command)
++void DisplayListPlayerPDF::add_clip_path(Gfx::Path const& clip_path)
++{
++    canvas().clipPath(Gfx::to_skia_path(clip_path), true);
++}
++
++void DisplayListPlayerPDF::apply_effects(ApplyEffects const& command, Gfx::Filter const*)
 +{
 +    SkPaint paint;
 +    paint.setAlphaf(command.opacity);
++    paint.setBlender(Gfx::to_skia_blender(command.compositing_and_blending_operator));
 +    canvas().saveLayer(nullptr, &paint);
 +}
 +
-+void DisplayListPlayerPDF::apply_transform(Web::Painting::ApplyTransform const& command)
++void DisplayListPlayerPDF::apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 const& matrix)
 +{
-+    auto new_transform = Gfx::translation_matrix(Gfx::Vector3<float>(command.origin.x(), command.origin.y(), 0));
-+    new_transform = new_transform * command.matrix;
-+    new_transform = new_transform * Gfx::translation_matrix(Gfx::Vector3<float>(-command.origin.x(), -command.origin.y(), 0));
-+    auto matrix = to_skia_matrix4x4(new_transform);
-+    canvas().concat(matrix);
++    auto new_transform = Gfx::translation_matrix(Gfx::Vector3<float>(origin.x(), origin.y(), 0));
++    new_transform = new_transform * matrix;
++    new_transform = new_transform * Gfx::translation_matrix(Gfx::Vector3<float>(-origin.x(), -origin.y(), 0));
++    canvas().concat(to_skia_matrix4x4(new_transform));
++}
++
++void DisplayListPlayerPDF::paint_linear_gradient(PaintLinearGradient const& command)
++{
++    auto colors = to_skia_gradient_colors(inline_objects<Gfx::Color>(command.color_stops.colors));
++    auto positions = inline_objects<float>(command.color_stops.positions);
++    if (colors.is_empty())
++        return;
++
++    auto rect = command.gradient_rect.to_type<float>();
++    auto length = Gfx::calculate_gradient_length<float>(rect.size(), command.gradient_angle);
++
++    auto rect_center = rect.center();
++    auto start = rect_center.translated(0, (.5f - command.first_stop_position) * length);
++    auto end = start.translated(0, command.repeat_length * -length);
++    Array const points { Gfx::to_skia_point(start), Gfx::to_skia_point(end) };
++
++    SkMatrix matrix;
++    matrix.setRotate(command.gradient_angle, rect_center.x(), rect_center.y());
++
++    auto color_space = SkColorSpace::MakeSRGB();
++    auto interpolation = to_skia_interpolation(command.interpolation_method);
++    auto shader = SkGradientShader::MakeLinear(points.data(), colors.data(), color_space, positions.data(), positions.size(), SkTileMode::kRepeat, interpolation, &matrix);
++
++    SkPaint paint;
++    paint.setDither(true);
++    paint.setShader(shader);
++    canvas().drawRect(Gfx::to_skia_rect(rect), paint);
++}
++
++void DisplayListPlayerPDF::paint_radial_gradient(PaintRadialGradient const& command)
++{
++    auto colors = to_skia_gradient_colors(inline_objects<Gfx::Color>(command.color_stops.colors));
++    auto positions = inline_objects<float>(command.color_stops.positions);
++    if (colors.is_empty())
++        return;
++
++    auto const& rect = command.rect;
++    auto center = Gfx::to_skia_point(command.center.translated(command.rect.location()));
++
++    auto const size = command.size.to_type<float>();
++    SkMatrix matrix;
++    auto const aspect_ratio = size.width() / size.height();
++    auto const sx = isinf(aspect_ratio) ? 1.0f : aspect_ratio;
++    matrix.setScale(sx, 1.0f, center.x(), center.y());
++
++    SkTileMode tile_mode = command.color_stops.repeating ? SkTileMode::kRepeat : SkTileMode::kClamp;
++    auto color_space = SkColorSpace::MakeSRGB();
++    auto interpolation = to_skia_interpolation(command.interpolation_method);
++    auto shader = SkGradientShader::MakeRadial(center, size.height(), colors.data(), color_space, positions.data(), positions.size(), tile_mode, interpolation, &matrix);
++
++    SkPaint paint;
++    paint.setDither(true);
++    paint.setAntiAlias(true);
++    paint.setShader(shader);
++    canvas().drawRect(Gfx::to_skia_rect(rect), paint);
++}
++
++void DisplayListPlayerPDF::paint_conic_gradient(PaintConicGradient const& command)
++{
++    auto colors = to_skia_gradient_colors(inline_objects<Gfx::Color>(command.color_stops.colors));
++    auto positions = inline_objects<float>(command.color_stops.positions);
++    if (colors.is_empty())
++        return;
++
++    auto const& rect = command.rect;
++    auto center = command.position.translated(rect.location()).to_type<float>();
++
++    SkMatrix matrix;
++    matrix.setRotate(-90 + command.start_angle, center.x(), center.y());
++    auto color_space = SkColorSpace::MakeSRGB();
++    auto interpolation = to_skia_interpolation(command.interpolation_method);
++    auto shader = SkGradientShader::MakeSweep(center.x(), center.y(), colors.data(), color_space, positions.data(), positions.size(), SkTileMode::kRepeat, 0, 360, interpolation, &matrix);
++
++    SkPaint paint;
++    paint.setDither(true);
++    paint.setAntiAlias(true);
++    paint.setShader(shader);
++    canvas().drawRect(Gfx::to_skia_rect(rect), paint);
++}
++
++void DisplayListPlayerPDF::paint_outer_box_shadow(PaintOuterBoxShadow const& command)
++{
++    auto content_rrect = to_skia_rrect(command.device_content_rect, command.content_corner_radii);
++
++    canvas().save();
++    canvas().clipRRect(content_rrect, SkClipOp::kDifference, true);
++    SkPaint paint;
++    paint.setAntiAlias(true);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    paint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, command.blur_radius / 2));
++    canvas().drawRRect(to_skia_rrect(command.shadow_rect, command.shadow_corner_radii), paint);
++    canvas().restore();
++}
++
++void DisplayListPlayerPDF::paint_inner_box_shadow(PaintInnerBoxShadow const& command)
++{
++    SkPath outer_path;
++    outer_path.addRRect(to_skia_rrect(command.outer_shadow_rect, command.content_corner_radii));
++    SkPath inner_path;
++    inner_path.addRRect(to_skia_rrect(command.inner_shadow_rect, command.inner_shadow_corner_radii));
++
++    SkPath result_path;
++    if (!Op(outer_path, inner_path, SkPathOp::kDifference_SkPathOp, &result_path))
++        return;
++
++    SkPaint paint;
++    paint.setAntiAlias(true);
++    paint.setColor(Gfx::to_skia_color(command.color));
++    paint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, command.blur_radius / 2));
++    canvas().save();
++    canvas().clipRRect(to_skia_rrect(command.device_content_rect, command.content_corner_radii), true);
++    canvas().drawPath(result_path, paint);
++    canvas().restore();
++}
++
++void DisplayListPlayerPDF::paint_text_shadow(PaintTextShadow const& command)
++{
++    auto blur_image_filter = SkImageFilters::Blur(command.blur_radius / 2, command.blur_radius / 2, nullptr);
++    SkPaint blur_paint;
++    blur_paint.setImageFilter(blur_image_filter);
++    canvas().saveLayer(SkCanvas::SaveLayerRec(nullptr, &blur_paint, nullptr, 0));
++    draw_glyph_run({ .font_id = command.font_id,
++        .glyphs = command.glyphs,
++        .rect = command.text_rect,
++        .glyph_bounding_rect = command.shadow_bounding_rect,
++        .translation = command.draw_location + command.text_rect.location().to_type<float>(),
++        .scale = command.scale,
++        .color = command.color });
++    canvas().restore();
++}
++
++void DisplayListPlayerPDF::paint_nested_display_list(PaintNestedDisplayList const& command)
++{
++    canvas().save();
++    canvas().clipRect(Gfx::to_skia_rect(command.rect));
++    canvas().translate(command.rect.x(), command.rect.y());
++    Web::Painting::ScrollStateSnapshot scroll_state_snapshot;
++    auto const& nested = resource_storage().display_list_resource(command.display_list_id);
++    execute_nested_display_list(*nested.display_list, nested.visual_context_tree, scroll_state_snapshot, nested.display_list->command_bytes());
++    canvas().restore();
 +}
 +
 +}
 diff --git a/Utilities/Itbaa/lib/DisplayListPlayerPDF.h b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
 new file mode 100644
-index 0000000000..da2efc9a5c
+index 00000000000..233ba1896dc
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/DisplayListPlayerPDF.h
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,81 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -685,7 +1213,9 @@ index 0000000000..da2efc9a5c
 +
 +#pragma once
 +
++#include <LibGfx/DecodedImageFrameSkiaImageCache.h>
 +#include <LibGfx/Forward.h>
++#include <LibGfx/Path.h>
 +#include <LibWeb/Painting/DisplayList.h>
 +#include <LibWeb/Painting/DisplayListCommand.h>
 +
@@ -693,47 +1223,305 @@ index 0000000000..da2efc9a5c
 +
 +namespace Itbaa {
 +
-+class DisplayListPlayerPDF {
++// Plays a recorded DisplayList onto an SkPDF page canvas for vector PDF output. Mirrors
++// DisplayListPlayerSkia but draws to its own SkCanvas, not a Gfx::PaintingSurface. Gradients
++// (emitted by SkPDF as native shadings), shadows, and nested display lists are fully painted;
++// compositor/video commands and SVG pattern fills have no PDF meaning and are no-ops.
++class DisplayListPlayerPDF final : public Web::Painting::DisplayListPlayer {
 +public:
-+    DisplayListPlayerPDF(SkCanvas& canvas);
-+    ~DisplayListPlayerPDF() = default;
++    explicit DisplayListPlayerPDF(SkCanvas& canvas)
++        : m_canvas(canvas)
++    {
++    }
++    virtual ~DisplayListPlayerPDF() override = default;
 +
-+    void execute(Web::Painting::DisplayList&);
++    virtual void flush(Gfx::PaintingSurface&) override { }
 +
 +private:
 +    SkCanvas& canvas() { return m_canvas; }
++    Gfx::Path path_from_data(Web::Painting::DisplayListDataSpan) const;
 +
-+    void draw_glyph_run(Web::Painting::DrawGlyphRun const&);
-+    void fill_rect(Web::Painting::FillRect const&);
-+    void draw_scaled_immutable_bitmap(Web::Painting::DrawScaledImmutableBitmap const&);
-+    void add_clip_rect(Web::Painting::AddClipRect const&);
-+    void save();
-+    void save_layer();
-+    void restore();
-+    void translate(Web::Painting::Translate const&);
-+    void push_stacking_context(Web::Painting::PushStackingContext const&);
-+    void pop_stacking_context();
-+    void fill_rect_with_rounded_corners(Web::Painting::FillRectWithRoundedCorners const&);
-+    void fill_path(Web::Painting::FillPath const&);
-+    void stroke_path(Web::Painting::StrokePath const&);
-+    void draw_ellipse(Web::Painting::DrawEllipse const&);
-+    void fill_ellipse(Web::Painting::FillEllipse const&);
-+    void draw_line(Web::Painting::DrawLine const&);
-+    void draw_rect(Web::Painting::DrawRect const&);
-+    void add_rounded_rect_clip(Web::Painting::AddRoundedRectClip const&);
-+    void apply_opacity(Web::Painting::ApplyOpacity const&);
-+    void apply_transform(Web::Painting::ApplyTransform const&);
++    virtual void draw_glyph_run(Web::Painting::DrawGlyphRun const&) override;
++    virtual void fill_rect(Web::Painting::FillRect const&) override;
++    virtual void draw_scaled_decoded_image_frame(Web::Painting::DrawScaledDecodedImageFrame const&) override;
++    virtual void draw_repeated_decoded_image_frame(Web::Painting::DrawRepeatedDecodedImageFrame const&) override;
++    virtual void draw_compositor_surface(Web::Painting::DrawCompositorSurface const&) override { }
++    virtual void draw_video_frame(Web::Painting::DrawVideoFrame const&) override { }
++    virtual void save(Web::Painting::Save const&) override;
++    virtual void save_layer(Web::Painting::SaveLayer const&) override;
++    virtual void restore(Web::Painting::Restore const&) override;
++    virtual void translate(Web::Painting::Translate const&) override;
++    virtual void add_clip_rect(Web::Painting::AddClipRect const&) override;
++    virtual void paint_linear_gradient(Web::Painting::PaintLinearGradient const&) override;
++    virtual void paint_radial_gradient(Web::Painting::PaintRadialGradient const&) override;
++    virtual void paint_conic_gradient(Web::Painting::PaintConicGradient const&) override;
++    virtual void paint_outer_box_shadow(Web::Painting::PaintOuterBoxShadow const&) override;
++    virtual void paint_inner_box_shadow(Web::Painting::PaintInnerBoxShadow const&) override;
++    virtual void paint_text_shadow(Web::Painting::PaintTextShadow const&) override;
++    virtual void fill_rect_with_rounded_corners(Web::Painting::FillRectWithRoundedCorners const&) override;
++    virtual void fill_path(Web::Painting::FillPath const&) override;
++    virtual void stroke_path(Web::Painting::StrokePath const&) override;
++    virtual void draw_ellipse(Web::Painting::DrawEllipse const&) override;
++    virtual void fill_ellipse(Web::Painting::FillEllipse const&) override;
++    virtual void draw_line(Web::Painting::DrawLine const&) override;
++    virtual void apply_backdrop_filter(Web::Painting::ApplyBackdropFilter const&) override { }
++    virtual void draw_rect(Web::Painting::DrawRect const&) override;
++    virtual void add_rounded_rect_clip(Web::Painting::AddRoundedRectClip const&) override;
++    virtual void paint_nested_display_list(Web::Painting::PaintNestedDisplayList const&) override;
++    virtual void compositor_scroll_node(Web::Painting::CompositorScrollNode const&) override { }
++    virtual void compositor_sticky_area(Web::Painting::CompositorStickyArea const&) override { }
++    virtual void compositor_wheel_hit_test_target(Web::Painting::CompositorWheelHitTestTarget const&) override { }
++    virtual void compositor_wheel_hit_test_target_with_corner_radii(Web::Painting::CompositorWheelHitTestTargetWithCornerRadii const&) override { }
++    virtual void compositor_main_thread_wheel_event_region(Web::Painting::CompositorMainThreadWheelEventRegion const&) override { }
++    virtual void compositor_viewport_scrollbar(Web::Painting::CompositorViewportScrollbar const&) override { }
++    virtual void compositor_blocking_wheel_event_region(Web::Painting::CompositorBlockingWheelEventRegion const&) override { }
++    virtual void paint_scrollbar(Web::Painting::PaintScrollBar const&) override { }
++    virtual void apply_effects(Web::Painting::ApplyEffects const&, Gfx::Filter const*) override;
++    virtual void apply_transform(Gfx::FloatPoint origin, Gfx::FloatMatrix4x4 const&) override;
++    virtual void add_clip_path(Gfx::Path const&) override;
++    virtual bool would_be_fully_clipped_by_painter(Gfx::IntRect) const override { return false; }
 +
 +    SkCanvas& m_canvas;
++    Gfx::DecodedImageFrameSkiaImageCache m_image_cache;
++};
++
++}
+diff --git a/Utilities/Itbaa/lib/ImageWriter.cpp b/Utilities/Itbaa/lib/ImageWriter.cpp
+new file mode 100644
+index 00000000000..c4dff345fbd
+--- /dev/null
++++ b/Utilities/Itbaa/lib/ImageWriter.cpp
+@@ -0,0 +1,96 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#include "ImageWriter.h"
++#include <AK/MemoryStream.h>
++#include <AK/StdLibExtras.h>
++#include <LibCore/File.h>
++#include <string.h>
++#include <LibGfx/Bitmap.h>
++#include <LibGfx/ImageFormats/JPEGWriter.h>
++#include <LibGfx/ImageFormats/PNGWriter.h>
++
++#include <core/SkCanvas.h>
++#include <core/SkColorType.h>
++#include <core/SkImageInfo.h>
++#include <core/SkPicture.h>
++#include <core/SkPixmap.h>
++#include <core/SkSurface.h>
++
++namespace Itbaa {
++
++sk_sp<SkImage> rasterize_page(RenderedPage const& page, float scale)
++{
++    if (scale <= 0.0f)
++        scale = 1.0f;
++
++    int width = AK::max(1, static_cast<int>(page.width * scale));
++    int height = AK::max(1, static_cast<int>(page.height * scale));
++
++    auto info = SkImageInfo::MakeN32Premul(width, height);
++    auto surface = SkSurfaces::Raster(info);
++    if (!surface)
++        return nullptr;
++
++    auto* canvas = surface->getCanvas();
++    canvas->clear(SK_ColorWHITE);
++    canvas->scale(scale, scale);
++    if (page.picture)
++        canvas->drawPicture(page.picture);
++
++    return surface->makeImageSnapshot();
++}
++
++// The bundled Skia is built without libpng/libjpeg encoders, so pixels are copied into a
++// Gfx::Bitmap and encoded with Ladybird's own writers.
++static ErrorOr<NonnullRefPtr<Gfx::Bitmap>> page_to_bitmap(RenderedPage const& page, float scale)
++{
++    auto image = rasterize_page(page, scale);
++    if (!image)
++        return Error::from_string_literal("Failed to rasterize page");
++
++    SkPixmap pixmap;
++    if (!image->peekPixels(&pixmap)) {
++        auto raster = image->makeRasterImage();
++        if (!raster || !raster->peekPixels(&pixmap))
++            return Error::from_string_literal("Failed to read rasterized pixels");
++    }
++
++    auto format = pixmap.colorType() == kRGBA_8888_SkColorType ? Gfx::BitmapFormat::RGBA8888 : Gfx::BitmapFormat::BGRA8888;
++    auto bitmap = TRY(Gfx::Bitmap::create(format, Gfx::AlphaType::Premultiplied, { pixmap.width(), pixmap.height() }));
++
++    auto const* source = static_cast<u8 const*>(pixmap.addr());
++    size_t row_bytes = static_cast<size_t>(pixmap.width()) * 4;
++    for (int y = 0; y < pixmap.height(); ++y)
++        memcpy(bitmap->scanline_u8(y), source + static_cast<size_t>(y) * pixmap.rowBytes(), row_bytes);
++
++    return bitmap;
++}
++
++ErrorOr<ByteBuffer> encode_image(RenderedPage const& page, ImageFormat format, float scale)
++{
++    auto bitmap = TRY(page_to_bitmap(page, scale));
++
++    if (format == ImageFormat::PNG)
++        return Gfx::PNGWriter::encode(*bitmap);
++
++    AllocatingMemoryStream stream;
++    Gfx::JPEGWriter::Options options;
++    options.quality = 90;
++    TRY(Gfx::JPEGWriter::encode(stream, *bitmap, options));
++    return stream.read_until_eof();
++}
++
++ErrorOr<void> write_image_to_file(RenderedPage const& page, StringView path, ImageFormat format, float scale)
++{
++    auto bytes = TRY(encode_image(page, format, scale));
++
++    auto file = TRY(Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate));
++    TRY(file->write_until_depleted(bytes));
++    return {};
++}
++
++} // namespace Itbaa
+diff --git a/Utilities/Itbaa/lib/ImageWriter.h b/Utilities/Itbaa/lib/ImageWriter.h
+new file mode 100644
+index 00000000000..1a62c5218a1
+--- /dev/null
++++ b/Utilities/Itbaa/lib/ImageWriter.h
+@@ -0,0 +1,33 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include "Renderer.h"
++#include <AK/ByteBuffer.h>
++#include <AK/Error.h>
++#include <AK/StringView.h>
++
++#include <core/SkImage.h>
++#include <core/SkRefCnt.h>
++
++namespace Itbaa {
++
++enum class ImageFormat {
++    PNG,
++    JPEG,
++};
++
++// Rasterize a vector page to a CPU bitmap at the given scale (1.0 = 96 DPI screen pixels).
++sk_sp<SkImage> rasterize_page(RenderedPage const& page, float scale);
++
++// Encode a rendered page to PNG/JPEG bytes.
++ErrorOr<ByteBuffer> encode_image(RenderedPage const& page, ImageFormat format, float scale);
++
++// Encode a rendered page and write it to a file.
++ErrorOr<void> write_image_to_file(RenderedPage const& page, StringView path, ImageFormat format, float scale);
++
++} // namespace Itbaa
+diff --git a/Utilities/Itbaa/lib/InProcessImageCodecPlugin.cpp b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.cpp
+new file mode 100644
+index 00000000000..df95f6fccc3
+--- /dev/null
++++ b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.cpp
+@@ -0,0 +1,49 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#include "InProcessImageCodecPlugin.h"
++
++#include <LibGfx/ImageFormats/ImageDecoder.h>
++
++namespace Itbaa {
++
++NonnullRefPtr<Core::Promise<Web::Platform::DecodedImage>> InProcessImageCodecPlugin::decode_image(
++    ReadonlyBytes bytes,
++    Function<ErrorOr<void>(Web::Platform::DecodedImage&)> on_resolved,
++    Function<void(Error&)> on_rejected)
++{
++    auto promise = Core::Promise<Web::Platform::DecodedImage>::construct();
++    if (on_resolved)
++        promise->on_resolution = move(on_resolved);
++    if (on_rejected)
++        promise->on_rejection = move(on_rejected);
++
++    auto decoder = Gfx::ImageDecoder::try_create_for_raw_bytes(bytes);
++    if (decoder.is_error() || !decoder.value()) {
++        promise->reject(Error::from_string_literal("Failed to create image decoder"));
++        return promise;
++    }
++    auto image_decoder = decoder.release_value();
++
++    Web::Platform::DecodedImage decoded;
++    decoded.is_animated = image_decoder->is_animated();
++    decoded.loop_count = image_decoder->loop_count();
++    decoded.frame_count = image_decoder->frame_count();
++    for (size_t i = 0; i < image_decoder->frame_count(); ++i) {
++        auto frame = image_decoder->frame(i);
++        if (frame.is_error()) {
++            promise->reject(Error::from_string_literal("Failed to decode image frame"));
++            return promise;
++        }
++        decoded.frames.empend(frame.value().image, static_cast<size_t>(frame.value().duration));
++        decoded.all_durations.append(frame.value().duration);
++    }
++
++    promise->resolve(move(decoded));
++    return promise;
++}
++
++}
+diff --git a/Utilities/Itbaa/lib/InProcessImageCodecPlugin.h b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.h
+new file mode 100644
+index 00000000000..3301fbf2077
+--- /dev/null
++++ b/Utilities/Itbaa/lib/InProcessImageCodecPlugin.h
+@@ -0,0 +1,28 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <LibCore/Promise.h>
++#include <LibWeb/Platform/ImageCodecPlugin.h>
++
++namespace Itbaa {
++
++// Decodes images synchronously in-process via LibGfx, avoiding a separate ImageDecoder process.
++class InProcessImageCodecPlugin final : public Web::Platform::ImageCodecPlugin {
++public:
++    virtual ~InProcessImageCodecPlugin() override = default;
++
++    virtual NonnullRefPtr<Core::Promise<Web::Platform::DecodedImage>> decode_image(
++        ReadonlyBytes,
++        Function<ErrorOr<void>(Web::Platform::DecodedImage&)> on_resolved,
++        Function<void(Error&)> on_rejected) override;
++
++    virtual void request_animation_frames(i64, u32, u32) override { }
++    virtual void stop_animation_decode(i64) override { }
 +};
 +
 +}
 diff --git a/Utilities/Itbaa/lib/Itbaa.cpp b/Utilities/Itbaa/lib/Itbaa.cpp
 new file mode 100644
-index 0000000000..c30653545b
+index 00000000000..2d7353e95aa
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.cpp
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,419 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -741,12 +1529,16 @@ index 0000000000..c30653545b
 + */
 +
 +#include "Itbaa.h"
++#include "ImageWriter.h"
++#include "PageRange.h"
 +#include "PDFWriter.h"
 +#include "Renderer.h"
 +#include <AK/ByteString.h>
 +#include <AK/String.h>
 +#include <LibCore/File.h>
 +#include <LibCore/MappedFile.h>
++#include <LibFileSystem/FileSystem.h>
++#include <LibURL/URL.h>
 +#include <errno.h>
 +#include <stdio.h>
 +#include <string.h>
@@ -793,6 +1585,11 @@ index 0000000000..c30653545b
 +    s_initialized = false;
 +}
 +
++void itbaa_set_timeout(unsigned seconds)
++{
++    Itbaa::Renderer::set_load_timeout_seconds(seconds);
++}
++
 +char const* itbaa_version(void)
 +{
 +    return ITBAA_VERSION_STRING;
@@ -812,8 +1609,11 @@ index 0000000000..c30653545b
 +        .page_size = ITBAA_PAGE_A4,
 +        .width = 794,
 +        .height = 1123,
-+        .max_pages = 0,
++        .pages = nullptr,
 +        .full_page = 1,
++        .single_page = 0,
++        .rasterize = 0,
++        .scale = 0.0f,
 +    };
 +}
 +
@@ -868,12 +1668,27 @@ index 0000000000..c30653545b
 +    if (!ctx || !path)
 +        return ITBAA_ERROR_INVALID_ARGUMENT;
 +
-+    auto file_result = Core::MappedFile::map(StringView { path, strlen(path) });
++    auto path_view = StringView { path, strlen(path) };
++    auto file_result = Core::MappedFile::map(path_view);
 +    if (file_result.is_error())
 +        return ITBAA_ERROR_FILE_NOT_FOUND;
 +
 +    auto file = file_result.release_value();
-+    return itbaa_load_html(ctx, reinterpret_cast<char const*>(file->bytes().data()), file->bytes().size());
++    auto string_result = AK::String::from_utf8(StringView { reinterpret_cast<char const*>(file->bytes().data()), file->bytes().size() });
++    if (string_result.is_error())
++        return ITBAA_ERROR_MEMORY_ALLOCATION;
++    ctx->html_content = string_result.release_value();
++
++    // The document's own file:// URL gives it a file:// origin so same-origin subresources load.
++    Optional<URL::URL> document_url;
++    if (auto absolute = FileSystem::real_path(path_view); !absolute.is_error())
++        document_url = URL::create_with_file_scheme(absolute.value());
++
++    auto result = ctx->renderer.load_html(ctx->html_content, document_url);
++    if (result.is_error())
++        return ITBAA_ERROR_RENDER_FAILED;
++
++    return ITBAA_OK;
 +}
 +
 +static Itbaa::RenderConfig options_to_config(ItbaaOptions const* options)
@@ -908,9 +1723,29 @@ index 0000000000..c30653545b
 +    }
 +
 +    config.full_page = options->full_page != 0;
-+    config.max_pages = options->max_pages;
++    config.single_page = options->single_page != 0;
 +
 +    return config;
++}
++
++static float raster_scale_for(ItbaaOptions const* options)
++{
++    if (options && options->scale > 0.0f)
++        return options->scale;
++    return 2.0f;
++}
++
++static ErrorOr<Vector<Itbaa::RenderedPage>> select_pages(Vector<Itbaa::RenderedPage> rendered, char const* spec)
++{
++    if (!spec || spec[0] == '\0')
++        return rendered;
++
++    auto selected = TRY(Itbaa::parse_page_range(StringView { spec, strlen(spec) }, static_cast<u32>(rendered.size())));
++    Vector<Itbaa::RenderedPage> chosen;
++    TRY(chosen.try_ensure_capacity(selected.size()));
++    for (auto page_number : selected)
++        chosen.append(rendered[page_number - 1]);
++    return chosen;
 +}
 +
 +ItbaaError itbaa_get_info(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaDocumentInfo* info)
@@ -929,6 +1764,18 @@ index 0000000000..c30653545b
 +    info->page_count = metrics.page_count;
 +    info->content_width = metrics.content_width;
 +    info->content_height = metrics.content_height;
++    info->page_width = config.page_width;
++    info->page_height = config.page_height;
++
++    if (config.single_page) {
++        info->page_count = 1;
++        info->page_height = metrics.content_height;
++    } else if (options && options->pages && options->pages[0]) {
++        auto selected = Itbaa::parse_page_range(StringView { options->pages, strlen(options->pages) }, metrics.page_count);
++        if (selected.is_error())
++            return ITBAA_ERROR_INVALID_ARGUMENT;
++        info->page_count = static_cast<uint32_t>(selected.value().size());
++    }
 +
 +    return ITBAA_OK;
 +}
@@ -947,11 +1794,13 @@ index 0000000000..c30653545b
 +    if (pages_result.is_error())
 +        return ITBAA_ERROR_RENDER_FAILED;
 +
-+    auto pages = pages_result.release_value();
++    auto selected = select_pages(pages_result.release_value(), options->pages);
++    if (selected.is_error())
++        return ITBAA_ERROR_INVALID_ARGUMENT;
++    auto pages = selected.release_value();
 +
-+    // Generate PDF
 +    Itbaa::PDFWriter writer;
-+    auto pdf_result = writer.generate(pages);
++    auto pdf_result = writer.generate(pages, options && options->rasterize != 0, raster_scale_for(options));
 +    if (pdf_result.is_error())
 +        return ITBAA_ERROR_PDF_GENERATION;
 +
@@ -981,11 +1830,13 @@ index 0000000000..c30653545b
 +    if (pages_result.is_error())
 +        return ITBAA_ERROR_RENDER_FAILED;
 +
-+    auto pages = pages_result.release_value();
++    auto selected = select_pages(pages_result.release_value(), options->pages);
++    if (selected.is_error())
++        return ITBAA_ERROR_INVALID_ARGUMENT;
++    auto pages = selected.release_value();
 +
-+    // Generate PDF to file
 +    Itbaa::PDFWriter writer;
-+    auto result = writer.generate_to_file(pages, StringView { output_path, strlen(output_path) });
++    auto result = writer.generate_to_file(pages, StringView { output_path, strlen(output_path) }, options && options->rasterize != 0, raster_scale_for(options));
 +    if (result.is_error()) {
 +        auto error = result.release_error();
 +        auto error_str = error.is_errno()
@@ -999,10 +1850,42 @@ index 0000000000..c30653545b
 +        memcpy(s_last_error_message, error_bytes.data(), copy_len);
 +        s_last_error_message[copy_len] = '\0';
 +
-+        fprintf(stderr, "DEBUG: File write error details: %s\n", s_last_error_message);
-+
 +        return ITBAA_ERROR_FILE_WRITE;
 +    }
++
++    return ITBAA_OK;
++}
++
++ItbaaError itbaa_render_to_image_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path)
++{
++    if (!s_initialized)
++        return ITBAA_ERROR_NOT_INITIALIZED;
++    if (!ctx || !output_path)
++        return ITBAA_ERROR_INVALID_ARGUMENT;
++
++    auto path = StringView { output_path, strlen(output_path) };
++    Itbaa::ImageFormat format;
++    if (path.ends_with(".png"sv, CaseSensitivity::CaseInsensitive))
++        format = Itbaa::ImageFormat::PNG;
++    else if (path.ends_with(".jpg"sv, CaseSensitivity::CaseInsensitive) || path.ends_with(".jpeg"sv, CaseSensitivity::CaseInsensitive))
++        format = Itbaa::ImageFormat::JPEG;
++    else
++        return ITBAA_ERROR_INVALID_ARGUMENT;
++
++    // Image output is a single tall capture of the whole document.
++    auto config = options_to_config(options);
++    config.single_page = true;
++
++    auto pages_result = ctx->renderer.render(config);
++    if (pages_result.is_error())
++        return ITBAA_ERROR_RENDER_FAILED;
++    auto pages = pages_result.release_value();
++    if (pages.is_empty())
++        return ITBAA_ERROR_RENDER_FAILED;
++
++    auto write_result = Itbaa::write_image_to_file(pages[0], path, format, raster_scale_for(options));
++    if (write_result.is_error())
++        return ITBAA_ERROR_FILE_WRITE;
 +
 +    return ITBAA_OK;
 +}
@@ -1060,10 +1943,10 @@ index 0000000000..c30653545b
 +} // extern "C"
 diff --git a/Utilities/Itbaa/lib/Itbaa.h b/Utilities/Itbaa/lib/Itbaa.h
 new file mode 100644
-index 0000000000..c0ea09fdf2
+index 00000000000..1eec4164d99
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.h
-@@ -0,0 +1,194 @@
+@@ -0,0 +1,211 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1127,8 +2010,11 @@ index 0000000000..c0ea09fdf2
 +    ItbaaPageSize page_size;
 +    uint32_t width;     /* Custom width (pixels at 96 DPI) */
 +    uint32_t height;    /* Custom height (pixels at 96 DPI) */
-+    uint32_t max_pages; /* 0 = unlimited */
++    char const* pages;  /* 1-based range spec ("2-5,8"); NULL or "" = all pages */
 +    int full_page;      /* 1 = capture entire scrollable content */
++    int single_page;    /* 1 = emit one tall page instead of slicing into page-height tiles */
++    int rasterize;      /* 1 = embed each page as a raster image in the PDF (no vector/text) */
++    float scale;        /* Raster resolution multiplier for image/raster output (<= 0 = default) */
 +} ItbaaOptions;
 +
 +/* Document information */
@@ -1136,6 +2022,8 @@ index 0000000000..c0ea09fdf2
 +    uint32_t page_count;
 +    uint32_t content_width;
 +    uint32_t content_height;
++    uint32_t page_width;
++    uint32_t page_height;
 +} ItbaaDocumentInfo;
 +
 +/* PDF output buffer */
@@ -1149,8 +2037,7 @@ index 0000000000..c0ea09fdf2
 + * ============================================================================ */
 +
 +/**
-+ * Initialize the Itbaa library.
-+ * Must be called before any other functions.
++ * Initialize the Itbaa library. Must be called before any other functions.
 + * Returns ITBAA_OK on success.
 + */
 +ItbaaError itbaa_init(void);
@@ -1159,6 +2046,13 @@ index 0000000000..c0ea09fdf2
 + * Shutdown the Itbaa library and free all resources.
 + */
 +void itbaa_shutdown(void);
++
++/**
++ * Set the maximum seconds to wait for subresources (images/fonts/CSS) before rendering anyway.
++ * This is a safety ceiling for stuck resources, not a fixed delay; rendering proceeds as soon as
++ * the document is ready. Default 10; a value of 0 is ignored.
++ */
++void itbaa_set_timeout(unsigned seconds);
 +
 +/**
 + * Get the version string.
@@ -1228,6 +2122,12 @@ index 0000000000..c0ea09fdf2
 +ItbaaError itbaa_convert_to_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path);
 +
 +/**
++ * Render the loaded HTML to a single image file (PNG or JPEG, chosen by the output path's
++ * extension). Captures the full content as one tall image; options.scale controls resolution.
++ */
++ItbaaError itbaa_render_to_image_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path);
++
++/**
 + * Free a PDF buffer returned by itbaa_convert().
 + */
 +void itbaa_free_buffer(ItbaaPDFBuffer* buffer);
@@ -1260,10 +2160,10 @@ index 0000000000..c0ea09fdf2
 +#endif
 diff --git a/Utilities/Itbaa/lib/PDFWriter.cpp b/Utilities/Itbaa/lib/PDFWriter.cpp
 new file mode 100644
-index 0000000000..c9d41ee54b
+index 00000000000..016258cdfa3
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/PDFWriter.cpp
-@@ -0,0 +1,124 @@
+@@ -0,0 +1,132 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1271,6 +2171,7 @@ index 0000000000..c9d41ee54b
 + */
 +
 +#include "PDFWriter.h"
++#include "ImageWriter.h"
 +#include <AK/ByteString.h>
 +#include <LibCore/File.h>
 +#include <errno.h>
@@ -1279,7 +2180,10 @@ index 0000000000..c9d41ee54b
 +#include <codec/SkCodec.h>
 +#include <core/SkCanvas.h>
 +#include <core/SkData.h>
++#include <core/SkImage.h>
 +#include <core/SkPicture.h>
++#include <core/SkRect.h>
++#include <core/SkSamplingOptions.h>
 +#include <core/SkStream.h>
 +#include <docs/SkPDFDocument.h>
 +
@@ -1296,7 +2200,7 @@ index 0000000000..c9d41ee54b
 +    return false;
 +}
 +
-+ErrorOr<ByteBuffer> PDFWriter::generate(Vector<RenderedPage> const& pages)
++ErrorOr<ByteBuffer> PDFWriter::generate(Vector<RenderedPage> const& pages, bool rasterize, float raster_scale)
 +{
 +    if (pages.is_empty())
 +        return Error::from_string_literal("No pages to render");
@@ -1346,8 +2250,12 @@ index 0000000000..c9d41ee54b
 +
 +        canvas->scale(scale_factor, scale_factor);
 +
-+        if (page_data.picture)
++        if (rasterize) {
++            if (auto image = rasterize_page(page_data, raster_scale))
++                canvas->drawImageRect(image, SkRect::MakeIWH(page_data.width, page_data.height), SkSamplingOptions { SkFilterMode::kLinear });
++        } else if (page_data.picture) {
 +            canvas->drawPicture(page_data.picture);
++        }
 +
 +        document->endPage();
 +    }
@@ -1361,9 +2269,9 @@ index 0000000000..c9d41ee54b
 +    return ByteBuffer::copy(data->bytes(), data->size());
 +}
 +
-+ErrorOr<void> PDFWriter::generate_to_file(Vector<RenderedPage> const& pages, StringView path)
++ErrorOr<void> PDFWriter::generate_to_file(Vector<RenderedPage> const& pages, StringView path, bool rasterize, float raster_scale)
 +{
-+    auto pdf_data = TRY(generate(pages));
++    auto pdf_data = TRY(generate(pages, rasterize, raster_scale));
 +
 +    auto file_result = Core::File::open(path, Core::File::OpenMode::Write | Core::File::OpenMode::Truncate);
 +    if (file_result.is_error()) {
@@ -1390,10 +2298,10 @@ index 0000000000..c9d41ee54b
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/PDFWriter.h b/Utilities/Itbaa/lib/PDFWriter.h
 new file mode 100644
-index 0000000000..3fda3f6c02
+index 00000000000..2b097189b33
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/PDFWriter.h
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,43 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1425,44 +2333,147 @@ index 0000000000..3fda3f6c02
 +    // Set PDF metadata
 +    void set_metadata(PDFMetadata const& metadata) { m_metadata = metadata; }
 +
-+    // Generate PDF from rendered pages
-+    ErrorOr<ByteBuffer> generate(Vector<RenderedPage> const& pages);
++    // Generate PDF from rendered pages. When rasterize is set, each page is drawn as a
++    // raster image (at raster_scale resolution) instead of vector content.
++    ErrorOr<ByteBuffer> generate(Vector<RenderedPage> const& pages, bool rasterize = false, float raster_scale = 2.0f);
 +
 +    // Generate PDF and write to file
-+    ErrorOr<void> generate_to_file(Vector<RenderedPage> const& pages, StringView path);
++    ErrorOr<void> generate_to_file(Vector<RenderedPage> const& pages, StringView path, bool rasterize = false, float raster_scale = 2.0f);
 +
 +private:
 +    PDFMetadata m_metadata;
 +};
 +
 +} // namespace Itbaa
-diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
+diff --git a/Utilities/Itbaa/lib/PageRange.cpp b/Utilities/Itbaa/lib/PageRange.cpp
 new file mode 100644
-index 0000000000..d4cdebae5c
+index 00000000000..983c8bdcbc9
 --- /dev/null
-+++ b/Utilities/Itbaa/lib/Renderer.cpp
-@@ -0,0 +1,349 @@
++++ b/Utilities/Itbaa/lib/PageRange.cpp
+@@ -0,0 +1,65 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
 + * SPDX-License-Identifier: BSD-2-Clause
 + */
 +
-+#include "Renderer.h"
++#include "PageRange.h"
++
++#include <AK/HashTable.h>
++#include <AK/QuickSort.h>
++
++namespace Itbaa {
++
++static ErrorOr<u32> parse_bound(StringView token, u32 fallback)
++{
++    token = token.trim_whitespace();
++    if (token.is_empty())
++        return fallback;
++    auto value = token.to_number<u32>();
++    if (!value.has_value())
++        return Error::from_string_literal("invalid page number in range");
++    return value.value();
++}
++
++ErrorOr<Vector<u32>> parse_page_range(StringView spec, u32 total_pages)
++{
++    Vector<u32> pages;
++    if (total_pages == 0)
++        return pages;
++
++    if (spec.trim_whitespace().is_empty()) {
++        for (u32 page = 1; page <= total_pages; ++page)
++            pages.append(page);
++        return pages;
++    }
++
++    HashTable<u32> seen;
++    for (auto segment : spec.split_view(',')) {
++        segment = segment.trim_whitespace();
++        if (segment.is_empty())
++            continue;
++
++        auto dash = segment.find('-');
++        u32 first;
++        u32 last;
++        if (dash.has_value()) {
++            first = TRY(parse_bound(segment.substring_view(0, dash.value()), 1));
++            last = TRY(parse_bound(segment.substring_view(dash.value() + 1), total_pages));
++        } else {
++            first = last = TRY(parse_bound(segment, 0));
++        }
++
++        first = max(first, 1u);
++        last = min(last, total_pages);
++        for (u32 page = first; page <= last; ++page) {
++            if (seen.set(page) == HashSetResult::InsertedNewEntry)
++                pages.append(page);
++        }
++    }
++
++    quick_sort(pages);
++    return pages;
++}
++
++}
+diff --git a/Utilities/Itbaa/lib/PageRange.h b/Utilities/Itbaa/lib/PageRange.h
+new file mode 100644
+index 00000000000..194026a1e9a
+--- /dev/null
++++ b/Utilities/Itbaa/lib/PageRange.h
+@@ -0,0 +1,19 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <AK/Error.h>
++#include <AK/StringView.h>
++#include <AK/Vector.h>
++
++namespace Itbaa {
++
++// Parses a 1-based page-range spec ("3", "2-5", "3-", "-4", "1,3,5-7") clamped to [1, total_pages].
++// An empty spec selects every page. Returns the selected page numbers, sorted, unique, ascending.
++ErrorOr<Vector<u32>> parse_page_range(StringView spec, u32 total_pages);
++
++}
+diff --git a/Utilities/Itbaa/lib/Renderer.cpp b/Utilities/Itbaa/lib/Renderer.cpp
+new file mode 100644
+index 00000000000..f2fb89b2e8a
+--- /dev/null
++++ b/Utilities/Itbaa/lib/Renderer.cpp
+@@ -0,0 +1,393 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
 +#include "DisplayListPlayerPDF.h"
++#include "InProcessImageCodecPlugin.h"
++#include "Renderer.h"
++#include "RequestClientFactory.h"
++
++#include <fcntl.h>
++
++#include <AK/Time.h>
 +#include <LibCore/AnonymousBuffer.h>
 +#include <LibCore/EventLoop.h>
 +#include <LibCore/MappedFile.h>
-+#include <LibCore/Socket.h>
 +#include <LibCore/System.h>
++#include <LibCore/Timer.h>
 +#include <LibGfx/Font/FontDatabase.h>
 +#include <LibGfx/Font/PathFontProvider.h>
++#include <LibGfx/PaintingSurface.h>
 +#include <LibGfx/Palette.h>
-+#include <LibIPC/Transport.h>
 +#include <LibJS/Runtime/VM.h>
-+#include <LibRequests/RequestClient.h>
 +#include <LibURL/URL.h>
 +#include <LibWeb/Bindings/MainThreadVM.h>
++#include <LibWeb/CSS/FontFaceSet.h>
 +#include <LibWeb/DOM/Document.h>
 +#include <LibWeb/HTML/BrowsingContext.h>
 +#include <LibWeb/HTML/PaintConfig.h>
@@ -1470,11 +2481,11 @@ index 0000000000..d4cdebae5c
 +#include <LibWeb/Loader/ResourceLoader.h>
 +#include <LibWeb/Page/Page.h>
 +#include <LibWeb/Painting/DisplayList.h>
++#include <LibWeb/Painting/DisplayListResourceStorage.h>
 +#include <LibWeb/Painting/ViewportPaintable.h>
 +#include <LibWeb/Platform/EventLoopPlugin.h>
-+#include <LibWeb/Platform/EventLoopPluginSerenity.h>
 +#include <LibWeb/Platform/FontPlugin.h>
-+#include <LibWebView/Plugins/FontPlugin.h>
++#include <LibWeb/Platform/ImageCodecPlugin.h>
 +
 +#include <core/SkCanvas.h>
 +#include <core/SkPicture.h>
@@ -1531,6 +2542,10 @@ index 0000000000..d4cdebae5c
 +    }
 +
 +    virtual double device_pixels_per_css_pixel() const override { return 1.0; }
++    virtual double zoom_level() const override { return 1.0; }
++    virtual double device_pixel_ratio() const override { return 1.0; }
++    virtual size_t screen_count() const override { return 1; }
++    virtual void request_frame() override { }
 +    virtual Web::CSS::PreferredColorScheme preferred_color_scheme() const override { return Web::CSS::PreferredColorScheme::Auto; }
 +    virtual Web::CSS::PreferredContrast preferred_contrast() const override { return Web::CSS::PreferredContrast::Auto; }
 +    virtual Web::CSS::PreferredMotion preferred_motion() const override { return Web::CSS::PreferredMotion::Auto; }
@@ -1538,11 +2553,16 @@ index 0000000000..d4cdebae5c
 +    virtual void report_finished_handling_input_event(u64, Web::EventResult) override { }
 +    virtual Web::DisplayListPlayerType display_list_player_type() const override { return Web::DisplayListPlayerType::SkiaCPU; }
 +    virtual bool is_headless() const override { return true; }
-+    virtual void request_file(Web::FileRequest) override { }
++    virtual void request_file(Web::FileRequest request) override
++    {
++        // Serves file:// subresources; grants the rendered HTML local filesystem read access.
++        request.on_file_request_finish(Core::System::open(request.path(), O_RDONLY));
++    }
 +
 +    void set_page(GC::Ref<Web::Page> page) { m_page = page; }
 +    void set_viewport_size(Web::DevicePixelSize size) { m_viewport_size = size; }
 +    void set_full_page_mode(bool full_page) { m_full_page_mode = full_page; }
++    void set_single_page(bool single_page) { m_single_page = single_page; }
 +
 +    ErrorOr<Vector<RenderedPage>> render_pages()
 +    {
@@ -1560,7 +2580,6 @@ index 0000000000..d4cdebae5c
 +
 +        float device_pixels_per_css = page().client().device_pixels_per_css_pixel();
 +
-+        // Set viewport size for proper layout
 +        document->navigable()->set_viewport_size(Web::CSSPixelSize { page_width / device_pixels_per_css, page_height / device_pixels_per_css });
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
@@ -1579,7 +2598,7 @@ index 0000000000..d4cdebae5c
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
 +        document->update_layout(UpdateLayoutReason::Debugging);
-+        document->invalidate_display_list();
++        document->set_needs_to_record_display_list();
 +
 +        Web::HTML::PaintConfig paint_config {
 +            .paint_overlay = false,
@@ -1587,23 +2606,32 @@ index 0000000000..d4cdebae5c
 +            .canvas_fill_rect = Gfx::IntRect { {}, { page_width, total_height } }
 +        };
 +
-+        auto display_list = document->record_display_list(paint_config);
++        Web::Painting::DisplayListResourceStorage resource_storage;
++        auto display_list = document->record_display_list(paint_config, resource_storage);
 +        if (!display_list)
 +            return Error::from_string_literal("Failed to record display list");
 +
-+        int num_pages = (total_height + page_height - 1) / page_height;
++        auto document_paintable = document->paintable();
++        if (!document_paintable || !document_paintable->has_visual_context_tree())
++            return Error::from_string_literal("Document has no paintable visual context tree");
++        auto visual_context_tree = document_paintable->visual_context_tree();
++
++        // execute() requires a PaintingSurface, but the PDF player draws to its own SkCanvas and never reads it.
++        auto placeholder_surface = Gfx::PaintingSurface::create_with_size({ 1, 1 }, Gfx::BitmapFormat::BGRA8888, Gfx::AlphaType::Premultiplied);
++
++        int num_pages = m_single_page ? 1 : (total_height + page_height - 1) / page_height;
 +        Vector<RenderedPage> pages;
 +
 +        for (int page_num = 0; page_num < num_pages; page_num++) {
-+            int y_offset = page_num * page_height;
-+            int this_page_height = AK::min(page_height, total_height - y_offset);
++            int y_offset = m_single_page ? 0 : page_num * page_height;
++            int this_page_height = m_single_page ? total_height : AK::min(page_height, total_height - y_offset);
 +
 +            SkPictureRecorder recorder;
 +            SkCanvas* canvas = recorder.beginRecording(page_width, this_page_height);
 +            canvas->translate(0, -y_offset);
 +
 +            Itbaa::DisplayListPlayerPDF player(*canvas);
-+            player.execute(*display_list);
++            player.execute(*display_list, visual_context_tree, resource_storage, {}, placeholder_surface);
 +
 +            sk_sp<SkPicture> picture = recorder.finishRecordingAsPicture();
 +
@@ -1626,7 +2654,6 @@ index 0000000000..d4cdebae5c
 +        int page_height = m_viewport_size.height().value();
 +        float device_pixels_per_css = page().client().device_pixels_per_css_pixel();
 +
-+        // Set viewport size for proper layout
 +        document->navigable()->set_viewport_size(Web::CSSPixelSize { page_width / device_pixels_per_css, page_height / device_pixels_per_css });
 +        document->set_needs_full_style_update(true);
 +        document->update_style();
@@ -1664,14 +2691,21 @@ index 0000000000..d4cdebae5c
 +    Queue<Web::QueuedInputEvent> m_input_event_queue;
 +    Web::DevicePixelSize m_viewport_size { 794, 1123 };
 +    bool m_full_page_mode { true };
++    bool m_single_page { false };
 +    mutable RefPtr<Gfx::PaletteImpl> m_palette_impl;
 +};
 +
 +GC_DEFINE_ALLOCATOR(RendererPageClient);
 +
-+// Static initialization state
 +static bool s_renderer_initialized = false;
 +static OwnPtr<Core::EventLoop> s_event_loop;
++static u32 s_load_timeout_seconds = 10;
++
++void Renderer::set_load_timeout_seconds(u32 seconds)
++{
++    if (seconds > 0)
++        s_load_timeout_seconds = seconds;
++}
 +
 +Renderer::Renderer() = default;
 +Renderer::~Renderer() = default;
@@ -1683,23 +2717,17 @@ index 0000000000..d4cdebae5c
 +
 +    s_event_loop = make<Core::EventLoop>();
 +
-+    Web::Platform::EventLoopPlugin::install(*new Web::Platform::EventLoopPluginSerenity);
++    Web::Platform::EventLoopPlugin::install(*new Web::Platform::EventLoopPlugin);
 +    Web::Bindings::initialize_main_thread_vm(Web::Bindings::AgentType::SimilarOriginWindow);
-+
 +    auto& vm = Web::Bindings::main_thread_vm();
 +
 +    auto& font_provider = static_cast<Gfx::PathFontProvider&>(
 +        Gfx::FontDatabase::the().install_system_font_provider(make<Gfx::PathFontProvider>()));
 +    font_provider.load_all_fonts_from_uri("resource://fonts"sv);
-+    Web::Platform::FontPlugin::install(*new WebView::FontPlugin(false, &font_provider));
++    Web::Platform::FontPlugin::install(*new Web::Platform::FontPlugin(false, &font_provider));
++    Web::Platform::ImageCodecPlugin::install(*new InProcessImageCodecPlugin);
 +
-+    int socket_fds[2] {};
-+    TRY(Core::System::socketpair(AF_LOCAL, SOCK_STREAM, 0, socket_fds));
-+    auto client_socket = TRY(Core::LocalSocket::adopt_fd(socket_fds[0]));
-+    TRY(client_socket->set_blocking(true));
-+    TRY(Core::System::close(socket_fds[1]));
-+
-+    auto request_client = TRY(try_make_ref_counted<Requests::RequestClient>(make<IPC::Transport>(move(client_socket))));
++    auto request_client = TRY(create_request_client());
 +    Web::ResourceLoader::initialize(vm.heap(), move(request_client));
 +
 +    s_renderer_initialized = true;
@@ -1712,7 +2740,7 @@ index 0000000000..d4cdebae5c
 +    s_renderer_initialized = false;
 +}
 +
-+ErrorOr<void> Renderer::load_html(StringView html)
++ErrorOr<void> Renderer::load_html(StringView html, Optional<URL::URL> document_url)
 +{
 +    if (!s_renderer_initialized)
 +        return Error::from_string_literal("Renderer not initialized");
@@ -1723,24 +2751,48 @@ index 0000000000..d4cdebae5c
 +    auto page = Web::Page::create(vm, page_client);
 +    page_client->set_page(page);
 +
-+    // Use create_a_new_top_level_traversable (like SVGDecodedImageData) to avoid BackingStoreManager issues
-+    page->set_top_level_traversable(Web::HTML::TraversableNavigable::create_a_new_top_level_traversable(page, nullptr, {}).release_value_but_fixme_should_propagate_errors());
++    page->set_top_level_traversable(Web::HTML::TraversableNavigable::create_a_new_top_level_traversable(page, nullptr, {}));
 +
 +    m_html_content = TRY(String::from_utf8(html));
-+    page->load_html(m_html_content);
 +
-+    // Process events until document is ready
-+    while (Core::EventLoop::current().pump(Core::EventLoop::WaitMode::PollForEvents))
-+        ;
++    // Default unlabeled input to UTF-8 (parser default is Windows-1252); an explicit charset within
++    // the spec's 1024-byte prescan window still wins.
++    auto scan = html.substring_view(0, min(html.length(), static_cast<size_t>(1024)));
++    if (!scan.contains("charset"sv, CaseSensitivity::CaseInsensitive))
++        m_html_content = TRY(String::formatted("<meta charset=\"utf-8\">{}", m_html_content));
++
++    if (document_url.has_value())
++        page->load_html(m_html_content, *document_url);
++    else
++        page->load_html(m_html_content);
++
++    // Wait until the document is fully ready to paint, bounded by a timeout:
++    //  - is_completely_loaded(): <img> and stylesheets delay the load event.
++    //  - fonts().status() == Loaded: @font-face fonts bypass the load event, so wait separately.
++    // A repeating timer keeps the loop waking so the deadline is honored even if loading stalls.
++    auto& event_loop = Core::EventLoop::current();
++    auto deadline = MonotonicTime::now() + AK::Duration::from_seconds(s_load_timeout_seconds);
++    auto wake_timer = Core::Timer::create_repeating(50, [] { });
++    wake_timer->start();
++    event_loop.spin_until([&] {
++        if (MonotonicTime::now() >= deadline)
++            return true;
++        auto* doc = page->top_level_browsing_context().active_document();
++        // Skip the initial about:blank: it's synchronously "complete" before our content navigates in.
++        if (!doc || doc->is_initial_about_blank() || !doc->is_completely_loaded())
++            return false;
++        return doc->fonts()->status() == Web::Bindings::FontFaceSetLoadStatus::Loaded;
++    });
++    wake_timer->stop();
 +
 +    auto* document = page->top_level_browsing_context().active_document();
 +    if (!document)
 +        return Error::from_string_literal("Failed to load document");
 +
++    // Flush the batched image-decode relayout/repaint invalidations before paint is recorded.
 +    document->set_needs_full_style_update(true);
 +    document->update_style();
-+
-+    while (Core::EventLoop::current().pump(Core::EventLoop::WaitMode::PollForEvents))
++    while (event_loop.pump(Core::EventLoop::WaitMode::PollForEvents))
 +        ;
 +
 +    m_page = page;
@@ -1763,6 +2815,7 @@ index 0000000000..d4cdebae5c
 +    auto* client = static_cast<RendererPageClient*>(m_page_client.ptr());
 +    client->set_viewport_size({ config.page_width, config.page_height });
 +    client->set_full_page_mode(config.full_page);
++    client->set_single_page(config.single_page);
 +
 +    return client->get_document_metrics();
 +}
@@ -1774,13 +2827,9 @@ index 0000000000..d4cdebae5c
 +    auto* client = static_cast<RendererPageClient*>(m_page_client.ptr());
 +    client->set_viewport_size({ config.page_width, config.page_height });
 +    client->set_full_page_mode(config.full_page);
++    client->set_single_page(config.single_page);
 +
-+    auto pages = TRY(client->render_pages());
-+
-+    if (config.max_pages > 0 && pages.size() > config.max_pages)
-+        pages.resize(config.max_pages);
-+
-+    return pages;
++    return client->render_pages();
 +}
 +
 +ErrorOr<void> Renderer::ensure_loaded()
@@ -1793,10 +2842,10 @@ index 0000000000..d4cdebae5c
 +} // namespace Itbaa
 diff --git a/Utilities/Itbaa/lib/Renderer.h b/Utilities/Itbaa/lib/Renderer.h
 new file mode 100644
-index 0000000000..afb8296b82
+index 00000000000..3c955fae449
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Renderer.h
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,87 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1809,7 +2858,9 @@ index 0000000000..afb8296b82
 +#include <AK/Error.h>
 +#include <AK/String.h>
 +#include <AK/Vector.h>
++#include <AK/Optional.h>
 +#include <LibGC/Ptr.h>
++#include <LibURL/URL.h>
 +#include <LibWeb/Page/Page.h>
 +#include <LibWeb/PixelUnits.h>
 +
@@ -1830,7 +2881,7 @@ index 0000000000..afb8296b82
 +    uint32_t page_width { 794 };   // A4 width at 96 DPI
 +    uint32_t page_height { 1123 }; // A4 height at 96 DPI
 +    bool full_page { true };       // Capture entire scrollable content
-+    uint32_t max_pages { 0 };      // 0 = unlimited
++    bool single_page { false };    // Emit one tall page instead of slicing into page_height tiles
 +};
 +
 +// Document metrics
@@ -1845,14 +2896,17 @@ index 0000000000..afb8296b82
 +    Renderer();
 +    ~Renderer();
 +
-+    // Initialize the rendering engine (call once)
++    // Initialize the rendering engine (call once).
 +    static ErrorOr<void> initialize();
 +
 +    // Shutdown the rendering engine
 +    static void shutdown();
 +
-+    // Load HTML content
-+    ErrorOr<void> load_html(StringView html);
++    static void set_load_timeout_seconds(u32 seconds);
++
++    // Load HTML content. A file:// document_url gives the document a file:// origin so it can
++    // load same-origin file:// subresources (fonts/CSS/images).
++    ErrorOr<void> load_html(StringView html, Optional<URL::URL> document_url = {});
 +
 +    // Load HTML from file
 +    ErrorOr<void> load_html_file(StringView path);
@@ -1879,11 +2933,60 @@ index 0000000000..afb8296b82
 +};
 +
 +} // namespace Itbaa
+diff --git a/Utilities/Itbaa/lib/RequestClientFactory.cpp b/Utilities/Itbaa/lib/RequestClientFactory.cpp
+new file mode 100644
+index 00000000000..9f72fd6574f
+--- /dev/null
++++ b/Utilities/Itbaa/lib/RequestClientFactory.cpp
+@@ -0,0 +1,19 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#include "RequestClientFactory.h"
++
++#include <LibIPC/Transport.h>
++
++namespace Itbaa {
++
++ErrorOr<NonnullRefPtr<Requests::RequestClient>> create_request_client()
++{
++    auto paired = TRY(IPC::Transport::create_paired());
++    return try_make_ref_counted<Requests::RequestClient>(move(paired.local));
++}
++
++}
+diff --git a/Utilities/Itbaa/lib/RequestClientFactory.h b/Utilities/Itbaa/lib/RequestClientFactory.h
+new file mode 100644
+index 00000000000..f45b3ccb58b
+--- /dev/null
++++ b/Utilities/Itbaa/lib/RequestClientFactory.h
+@@ -0,0 +1,18 @@
++/*
++ * Itbaa (اطبع) - HTML to PDF Conversion Library
++ * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
++ * SPDX-License-Identifier: BSD-2-Clause
++ */
++
++#pragma once
++
++#include <AK/Error.h>
++#include <LibRequests/RequestClient.h>
++
++namespace Itbaa {
++
++// ResourceLoader requires a RequestClient. This CLI has no request server, so the client is wired
++// to a dead transport: only file:// and data: subresources load; http(s) is not fetched.
++ErrorOr<NonnullRefPtr<Requests::RequestClient>> create_request_client();
++
++}
 diff --git a/vcpkg.json b/vcpkg.json
-index d4a1b5a5ea..f4774ab999 100644
+index fe21547b77b..e0eed7de99a 100644
 --- a/vcpkg.json
 +++ b/vcpkg.json
-@@ -178,7 +178,8 @@
+@@ -139,7 +139,8 @@
          "metal",
          "fontconfig",
          "harfbuzz",
@@ -1893,7 +2996,7 @@ index d4a1b5a5ea..f4774ab999 100644
        ]
      },
      {
-@@ -189,6 +190,7 @@
+@@ -150,6 +151,7 @@
          "freetype",
          "harfbuzz",
          "icu",
@@ -1901,7 +3004,7 @@ index d4a1b5a5ea..f4774ab999 100644
          "vulkan"
        ]
      },
-@@ -201,6 +203,7 @@
+@@ -162,6 +164,7 @@
          "fontconfig",
          "harfbuzz",
          "icu",
@@ -1909,10 +3012,10 @@ index d4a1b5a5ea..f4774ab999 100644
          "vulkan"
        ]
      },
-@@ -222,7 +225,11 @@
-     "vulkan",
+@@ -184,7 +187,11 @@
      "vulkan-headers",
      "woff2",
+     "wuffs",
 -    "zlib"
 +    "zlib",
 +    {
@@ -1920,5 +3023,5 @@ index d4a1b5a5ea..f4774ab999 100644
 +      "platform": "osx | linux | windows"
 +    }
    ],
-   "overrides": [
-     {
+   "features": {
+     "gtk": {

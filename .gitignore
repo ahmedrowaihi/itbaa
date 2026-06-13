@@ -1,0 +1,7 @@
+# Local Ladybird checkout created by build.sh (never commit the engine source)
+/ladybird/
+# Release artifacts
+/artifact/
+/artifacts/
+*.tar.gz
+*.zip
