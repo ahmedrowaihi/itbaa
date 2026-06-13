@@ -379,6 +379,8 @@ jobs:
   npm:
     name: Publish npm
     needs: release
+    permissions:
+      contents: write # let npm.yml attach the package tarball to the release
     uses: ./.github/workflows/npm.yml
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}

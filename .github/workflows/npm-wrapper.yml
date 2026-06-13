@@ -15,7 +15,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # create the npm-v* GitHub release
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -44,3 +44,19 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public # prepublishOnly runs the build
+
+      # GitHub release for the wrapper-only publish. Tagged npm-v* (NOT v*) so it doesn't trigger
+      # the binary release workflow. Binaries are unchanged — the wrapper just pins to the current one.
+      - name: GitHub release (npm wrapper)
+        working-directory: npm/itbaa
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          tarball="$(npm pack | tail -n1)"
+          binary="$(node -p "require('./package.json').optionalDependencies['@ahmedrowaihi/itbaa-linux-x64']")"
+          printf '%s\n\n%s\n' \
+            "Wrapper-only npm release \`@ahmedrowaihi/itbaa@$VERSION\`, pinned to binary \`v$binary\` (binaries unchanged)." \
+            "Install: \`npm install @ahmedrowaihi/itbaa@$VERSION\` — https://www.npmjs.com/package/@ahmedrowaihi/itbaa" > /tmp/notes.md
+          gh release create "npm-v$VERSION" "$tarball" -R "$GITHUB_REPOSITORY" \
+            --title "npm v$VERSION (wrapper)" --notes-file /tmp/notes.md

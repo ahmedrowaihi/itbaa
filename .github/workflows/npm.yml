@@ -23,7 +23,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # attach the npm tarball to the existing v* release
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -71,3 +71,22 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public
+
+      # Make the npm package visible on the GitHub release: attach its tarball and note install.
+      - name: Attach npm package to the release
+        working-directory: npm/itbaa
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          tarball="$(npm pack | tail -n1)"
+          gh release upload "$TAG" "$tarball" -R "$GITHUB_REPOSITORY" --clobber
+          body="$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body)"
+          # Idempotent: only append the npm note once (re-runs won't stack it).
+          case "$body" in
+            *"npm install @ahmedrowaihi/itbaa"*) ;;
+            *)
+              note="**npm:** \`npm install @ahmedrowaihi/itbaa@${TAG#v}\` — on [npmjs.com](https://www.npmjs.com/package/@ahmedrowaihi/itbaa); tarball attached above."
+              printf '%s\n\n---\n%s\n' "$body" "$note" | gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file -
+              ;;
+          esac
