@@ -70,10 +70,10 @@ index ea7d9039a75..161666f5a57 100644
    ],
    "buildPresets": [
 diff --git a/Utilities/CMakeLists.txt b/Utilities/CMakeLists.txt
-index caa5dadebd4..5691c66d80c 100644
+index caa5dadebd4..34b270380ec 100644
 --- a/Utilities/CMakeLists.txt
 +++ b/Utilities/CMakeLists.txt
-@@ -21,6 +21,66 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
+@@ -21,6 +21,71 @@ ladybird_utility(test262-runner SOURCES test262-runner.cpp LIBS LibJS LibFileSys
  ladybird_utility(dump-html-tokens SOURCES dump-html-tokens.cpp LIBS LibMain LibWeb)
  ladybird_utility(dump-html-tree SOURCES dump-html-tree.cpp LIBS LibMain LibWeb LibJS LibGC LibGfx LibIPC LibURL)
  
@@ -120,6 +120,11 @@ index caa5dadebd4..5691c66d80c 100644
 +    SOVERSION "1"
 +)
 +
++# Stamp the reported version from the release tag (-DITBAA_VERSION=1.2.3); defaults to a dev string.
++if(ITBAA_VERSION)
++    target_compile_definitions(itbaa PUBLIC ITBAA_VERSION_STRING="${ITBAA_VERSION}")
++endif()
++
 +# Itbaa CLI Tool
 +ladybird_utility(itbaa-cli
 +    SOURCES
@@ -140,7 +145,7 @@ index caa5dadebd4..5691c66d80c 100644
  if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
      include(CheckCSourceCompiles)
      # Check for musl's declaration of __assert_fail
-@@ -60,10 +120,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -60,10 +125,16 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
      install(TARGETS wasm COMPONENT wasm)
      install(FILES "${GIT_COMMIT_FILE}" COMPONENT wasm DESTINATION .)
  
@@ -158,7 +163,7 @@ index caa5dadebd4..5691c66d80c 100644
      set(CPACK_COMPONENTS_GROUPING ONE_PER_GROUP)
      if (APPLE)
          if("arm64" IN_LIST CMAKE_OSX_ARCHITECTURES AND "x86_64" IN_LIST CMAKE_OSX_ARCHITECTURES)
-@@ -77,6 +143,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
+@@ -77,6 +148,7 @@ if (NOT CMAKE_SKIP_INSTALL_RULES)
  
      set(CPACK_ARCHIVE_JS_FILE_NAME "ladybird-js-${CPACK_SYSTEM_NAME}")
      set(CPACK_ARCHIVE_WASM_FILE_NAME "ladybird-wasm-${CPACK_SYSTEM_NAME}")
@@ -1943,10 +1948,10 @@ index 00000000000..2d7353e95aa
 +} // extern "C"
 diff --git a/Utilities/Itbaa/lib/Itbaa.h b/Utilities/Itbaa/lib/Itbaa.h
 new file mode 100644
-index 00000000000..1eec4164d99
+index 00000000000..cb9a2f954f4
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.h
-@@ -0,0 +1,211 @@
+@@ -0,0 +1,215 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1972,7 +1977,11 @@ index 00000000000..1eec4164d99
 +#define ITBAA_VERSION_MAJOR 1
 +#define ITBAA_VERSION_MINOR 0
 +#define ITBAA_VERSION_PATCH 0
-+#define ITBAA_VERSION_STRING "1.0.0"
++
++/* Overridden at build time from the release tag (-DITBAA_VERSION=...); dev builds report this. */
++#ifndef ITBAA_VERSION_STRING
++#    define ITBAA_VERSION_STRING "0.0.0-dev"
++#endif
 +
 +/* ============================================================================
 + * Error Codes

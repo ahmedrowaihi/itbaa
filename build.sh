@@ -114,6 +114,10 @@ else
     EXTRA_CMAKE_ARGS+=(-DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON -DCMAKE_DISABLE_FIND_PACKAGE_VulkanHeaders=ON)
 fi
 
+# Stamp the reported version: ITBAA_VERSION env override, else git tag, else a dev string.
+ITBAA_VERSION="${ITBAA_VERSION:-$(git -C "$SCRIPT_DIR" describe --tags --always --dirty 2>/dev/null || echo 0.0.0-dev)}"
+EXTRA_CMAKE_ARGS+=(-DITBAA_VERSION="${ITBAA_VERSION#v}")
+
 cmake --preset "$PRESET" "${EXTRA_CMAKE_ARGS[@]}"
 
 # Build

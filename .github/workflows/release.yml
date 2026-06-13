@@ -172,6 +172,10 @@ jobs:
       - name: Configure
         working-directory: ladybird
         run: |
+          # Stamp the reported version from the release tag (v1.2.3 -> 1.2.3).
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          ITBAA_VERSION="${TAG#v}"
+          [ -n "$ITBAA_VERSION" ] || ITBAA_VERSION="0.0.0-dev"
           if [ "${{ matrix.target.os }}" == "macos" ]; then
             # Rust crate static archives aren't 8-byte aligned; the new ld rejects them, the classic linker accepts.
             cmake --preset Itbaa_Static -B Build \
@@ -179,6 +183,7 @@ jobs:
               -DCMAKE_CXX_COMPILER="$CXX" \
               -DBUILD_TESTING=OFF \
               -DENABLE_CI_BASELINE_CPU=ON \
+              -DITBAA_VERSION="$ITBAA_VERSION" \
               -DPython3_EXECUTABLE="${{ env.pythonLocation }}/bin/python" \
               -DCMAKE_OSX_DEPLOYMENT_TARGET="11.0" \
               -DCMAKE_EXE_LINKER_FLAGS="-Wl,-ld_classic" \
@@ -192,6 +197,7 @@ jobs:
               -DCMAKE_CXX_COMPILER="$CXX" \
               -DBUILD_TESTING=OFF \
               -DENABLE_CI_BASELINE_CPU=ON \
+              -DITBAA_VERSION="$ITBAA_VERSION" \
               -DPython3_EXECUTABLE="${{ env.pythonLocation }}/bin/python" \
               -DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON \
               -DCMAKE_DISABLE_FIND_PACKAGE_VulkanHeaders=ON
