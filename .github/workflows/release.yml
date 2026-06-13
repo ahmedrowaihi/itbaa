@@ -26,12 +26,11 @@ jobs:
       VCPKG_BINARY_SOURCES: "clear;nuget,https://nuget.pkg.github.com/ahmedrowaihi/index.json,readwrite"
 
     strategy:
-      fail-fast: false # vanilla and arabic fail independently; ship whatever is green
+      fail-fast: true # all-or-nothing: a single failed binary cancels the rest, no partial release
       matrix:
+        # Only the fork (upstream + the bidi/Arabic fix) is shipped; vanilla upstream added no
+        # value for users and doubled CI. The "arabic" name is kept so asset names are stable.
         variant:
-          - name: vanilla
-            repo: LadybirdBrowser/ladybird
-            ref: master
           - name: arabic
             repo: ahmedrowaihi/ladybird-itbaa
             ref: itbaa
@@ -66,6 +65,14 @@ jobs:
         run: |
           cd ladybird
           git apply ../patches/*.patch
+
+      # Pre-install Ladybird's pinned Rust toolchain with the minimal profile (no clippy/rustfmt),
+      # so the build's on-demand rustup sync can't hit the flaky clippy-preview component conflict.
+      - name: Setup Rust toolchain
+        working-directory: ladybird
+        run: |
+          rustup set profile minimal
+          rustup show
 
       # mainline llvm clang rejects the macOS SDK's CF_ENUM macro in CoreFoundation-including
       # vcpkg ports (e.g. libproxy); Apple's clang exempts it. Suppress for dependency builds.
@@ -121,8 +128,6 @@ jobs:
       - name: Setup ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          # Per-variant key: vanilla warms the cache, arabic reuses it for all
-          # unchanged TUs (only the bidi-touched LibWeb layout files recompile).
           key: ${{ matrix.variant.name }}-${{ matrix.target.os }}-${{ matrix.target.arch }}
           max-size: 3G
 
@@ -130,17 +135,24 @@ jobs:
         working-directory: ladybird
         run: ./Meta/Utils/build_vcpkg.py
 
-      # Point vcpkg's nuget at the GitHub Packages feed (the binary cache). nuget.exe runs under mono.
-      - name: Authenticate vcpkg binary cache (GitHub Packages)
+      # Wire vcpkg's binary cache to the GitHub Packages feed. vcpkg needs nuget.exe for this, but arm64
+      # sets VCPKG_FORCE_SYSTEM_BINARIES (no vcpkg-prebuilt helpers), which both blocks the download and
+      # makes vcpkg look for a *system* `nuget`. So fetch nuget.exe once (guard dropped), then expose a
+      # `nuget` wrapper on PATH — used for auth here and by `vcpkg install` in Configure.
+      - name: Set up NuGet binary cache (GitHub Packages)
         env:
           VCPKG_EXE: ${{ github.workspace }}/ladybird/Build/vcpkg/vcpkg
           FEED_URL: https://nuget.pkg.github.com/ahmedrowaihi/index.json
           CACHE_TOKEN: ${{ secrets.VCPKG_CACHE_TOKEN }}
         run: |
-          nuget="$("$VCPKG_EXE" fetch nuget | tail -n1)"
-          mono "$nuget" sources add -Source "$FEED_URL" -StorePasswordInClearText \
+          nuget_exe="$(env -u VCPKG_FORCE_SYSTEM_BINARIES "$VCPKG_EXE" fetch nuget | tail -n1)"
+          mkdir -p "$RUNNER_TEMP/bin"
+          printf '#!/bin/sh\nexec mono "%s" "$@"\n' "$nuget_exe" > "$RUNNER_TEMP/bin/nuget"
+          chmod +x "$RUNNER_TEMP/bin/nuget"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/bin/nuget" sources add -Source "$FEED_URL" -StorePasswordInClearText \
             -Name GitHubPackages -UserName ahmedrowaihi -Password "$CACHE_TOKEN"
-          mono "$nuget" setapikey "$CACHE_TOKEN" -Source "$FEED_URL"
+          "$RUNNER_TEMP/bin/nuget" setapikey "$CACHE_TOKEN" -Source "$FEED_URL"
 
       - name: Set compiler (Linux GNU)
         if: matrix.target.os == 'linux' && matrix.target.toolchain == 'GNU'
@@ -237,7 +249,8 @@ jobs:
   release:
     name: Create Release
     needs: build
-    if: always() && needs.build.result != 'cancelled'
+    # Publish only when every binary built — never a partial release.
+    if: needs.build.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -273,16 +286,11 @@ jobs:
         id: notes
         run: |
           cd artifacts
-          # Per-variant resolved Ladybird SHAs (first .commit file found per variant)
-          read_sha() { cat "$(ls itbaa-$1-*.commit 2>/dev/null | head -1)" 2>/dev/null || echo "n/a"; }
-          VANILLA_SHA=$(read_sha vanilla)
-          ARABIC_SHA=$(read_sha arabic)
+          # Resolved Ladybird SHA (first .commit file found)
+          ARABIC_SHA=$(cat "$(ls itbaa-arabic-*.commit 2>/dev/null | head -1)" 2>/dev/null || echo "n/a")
           # Checksums over the shippable archives only
           sha256sum itbaa-*.tar.gz itbaa-*.zip 2>/dev/null > SHA256SUMS || true
-          {
-            echo "vanilla_sha=$VANILLA_SHA"
-            echo "arabic_sha=$ARABIC_SHA"
-          } >> "$GITHUB_OUTPUT"
+          echo "arabic_sha=$ARABIC_SHA" >> "$GITHUB_OUTPUT"
           # .commit files are provenance inputs, not release assets
           rm -f itbaa-*.commit
 
@@ -323,12 +331,7 @@ jobs:
             - **Local assets** — web fonts, raster logos and CSS load straight
               from disk; mixed Arabic/English shaping and layout.
 
-            ### Variants
-
-            - **vanilla** — latest upstream Ladybird, unmodified.
-            - **arabic** — upstream + a bidirectional/Arabic text fix.
-
-            Interchangeable on the CLI — pick whichever rendering you need.
+            Built on latest upstream Ladybird plus a bidirectional/Arabic text fix.
 
             ### Usage
 
@@ -345,20 +348,16 @@ jobs:
 
             ### Downloads
 
-            | Variant | Platform | Arch | File |
-            |---------|----------|------|------|
-            | vanilla | Linux | x86_64 | `itbaa-vanilla-linux-x86_64.tar.gz` |
-            | vanilla | Linux | arm64 | `itbaa-vanilla-linux-arm64.tar.gz` |
-            | vanilla | macOS | arm64 | `itbaa-vanilla-macos-arm64.zip` |
-            | arabic | Linux | x86_64 | `itbaa-arabic-linux-x86_64.tar.gz` |
-            | arabic | Linux | arm64 | `itbaa-arabic-linux-arm64.tar.gz` |
-            | arabic | macOS | arm64 | `itbaa-arabic-macos-arm64.zip` |
+            | Platform | Arch | File |
+            |----------|------|------|
+            | Linux | x86_64 | `itbaa-arabic-linux-x86_64.tar.gz` |
+            | Linux | arm64 | `itbaa-arabic-linux-arm64.tar.gz` |
+            | macOS | arm64 | `itbaa-arabic-macos-arm64.zip` |
+
+            Plus `install.sh` (`curl -fsSL …/install.sh | sh`).
 
             ### Build provenance
 
-            | Variant | Ladybird source | Commit |
-            |---------|-----------------|--------|
-            | vanilla | `LadybirdBrowser/ladybird@master` | `${{ steps.notes.outputs.vanilla_sha }}` |
-            | arabic | `ahmedrowaihi/ladybird-itbaa@itbaa` | `${{ steps.notes.outputs.arabic_sha }}` |
+            Built from `ahmedrowaihi/ladybird-itbaa@itbaa` at commit `${{ steps.notes.outputs.arabic_sha }}`.
 
             Verify downloads against `SHA256SUMS`.
