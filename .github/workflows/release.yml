@@ -361,3 +361,11 @@ jobs:
             Built from `ahmedrowaihi/ladybird-itbaa@itbaa` at commit `${{ steps.notes.outputs.arabic_sha }}`.
 
             Verify downloads against `SHA256SUMS`.
+
+  npm:
+    name: Publish npm
+    needs: release
+    uses: ./.github/workflows/npm.yml
+    with:
+      tag: ${{ github.event.inputs.tag || github.ref_name }}
+    secrets: inherit

@@ -1,0 +1,42 @@
+name: Publish npm wrapper
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New wrapper version (patch bump on the current binary, e.g. 1.1.1)"
+        required: true
+
+concurrency:
+  group: npm-wrapper-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        working-directory: npm/itbaa
+        run: npm ci
+
+      - name: Set version + pin the current binary
+        working-directory: npm/itbaa
+        run: |
+          # The current binary = the latest published platform package; pin the wrapper to it.
+          binary="$(npm view @ahmedrowaihi/itbaa-linux-x64 version)"
+          node ../scripts/set-wrapper-version.mjs "${{ github.event.inputs.version }}" "$binary"
+
+      - name: Publish wrapper
+        working-directory: npm/itbaa
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public # prepublishOnly runs the build

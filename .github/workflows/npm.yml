@@ -1,16 +1,19 @@
 name: Publish npm
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag to publish (e.g. v1.0.0)"
+        description: "Release tag to publish (e.g. v1.1.0)"
         required: true
 
 concurrency:
-  group: npm-${{ github.event.inputs.tag || github.event.release.tag_name }}
+  group: npm-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -18,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
 
@@ -27,33 +29,28 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
 
-      - name: Resolve tag
-        id: tag
-        run: echo "tag=${{ github.event.inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
-
-      - name: Build main package
+      - name: Build wrapper
         working-directory: npm/itbaa
         run: |
           npm ci
           npm run build
 
-      - name: Download + extract arabic binaries
+      - name: Download + extract binaries
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ steps.tag.outputs.tag }}
+          TAG: ${{ inputs.tag }}
         run: |
           mkdir -p bins dl
           gh release download "$TAG" -R "${{ github.repository }}" -p 'itbaa-arabic-*' -D dl
           for f in dl/itbaa-arabic-linux-*.tar.gz; do tar -xzf "$f" -C bins; done
           for f in dl/itbaa-arabic-macos-*.zip; do unzip -o "$f" -d bins; done
-          ls -la bins
 
       - name: Assemble packages
         env:
           BIN_DIR: ${{ github.workspace }}/bins
-        run: node npm/scripts/prepare.mjs "${{ steps.tag.outputs.tag }}"
+        run: node npm/scripts/prepare.mjs "${{ inputs.tag }}"
 
-      # Platform packages first so the main package's optionalDependencies resolve on the registry.
+      # Platform packages first so the wrapper's optionalDependencies resolve on the registry.
       - name: Publish platform packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -63,7 +60,7 @@ jobs:
             (cd "$d" && npm publish --access public)
           done
 
-      - name: Publish main package
+      - name: Publish wrapper
         working-directory: npm/itbaa
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

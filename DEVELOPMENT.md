@@ -62,15 +62,19 @@ git push origin upstream --force-with-lease
 
 After this the same `patches/001-itbaa.patch` may need refreshing if upstream moved the files it touches (`vcpkg.json`, `Utilities/CMakeLists.txt`, `CMakePresets.json`, `Meta/CMake/presets/CMakeUnixPresets.json`). Re-run the regenerate + `--check` steps above.
 
-## Releasing
+Two release paths, because the binary (~1 hr build) and the npm wrapper (a 5 KB shim) change at different rates:
 
-Push a `v*` tag (or run the **Release** workflow manually). It builds the fork for each target (linux-x86_64 / linux-arm64 / macos-arm64), then publishes a GitHub release with the three binaries, `install.sh`, `SHA256SUMS`, and the resolved Ladybird commit. A single failed binary fails the whole release (no partial publish).
+**Binary release** — push a `v*` tag (or run the **Release** workflow). It builds the fork for each target (linux-x86_64 / linux-arm64 / macos-arm64), publishes a GitHub release (3 binaries + `install.sh` + `SHA256SUMS` + the resolved Ladybird commit), then auto-publishes the npm platform packages **and** wrapper at the same version. All-or-nothing (`fail-fast: true`): one failed binary fails the whole release — never a partial publish.
 
 ```bash
-git tag v0.2.0 && git push origin v0.2.0
+git tag v1.2.0 && git push origin v1.2.0
 ```
 
-`fail-fast: false` means a broken variant does not block the other — whatever is green ships.
+**Wrapper-only release** — for changes to the npm shim (`npm/itbaa/`) *without* rebuilding the binary: run the **Publish npm wrapper** workflow with a patch version (e.g. `1.2.1`). It publishes only `@ahmedrowaihi/itbaa`, pinned to the current (already-published) binary.
+
+Versioning: binary releases own major+minor (`1.2.0`); wrapper-only releases bump the patch (`1.2.1`, `1.2.2`, …) on top of the current binary.
+
+The vcpkg dependency build is cached in a GitHub Packages NuGet feed (ref-independent), so every release after the first restores prebuilt deps instead of rebuilding them in Configure.
 
 ## Project structure (inside the patch)
 
