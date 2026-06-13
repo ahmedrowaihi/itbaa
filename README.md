@@ -56,6 +56,27 @@ curl -fsSL https://raw.githubusercontent.com/ahmedrowaihi/itbaa/main/install.sh 
 > macOS builds are Apple Silicon (arm64) only. Linux binaries are glibc-based — use a
 > glibc distro (Debian/Ubuntu/RHEL), not Alpine/musl.
 
+### npm
+
+For Node projects — the prebuilt binary ships via a per-platform optional dependency
+(`os`/`cpu`-gated, no postinstall download):
+
+```bash
+npm install @ahmedrowaihi/itbaa
+```
+
+Gives the `itbaa` CLI plus a fluent JS API:
+
+```js
+import { from, fromFile, fromFiles } from "@ahmedrowaihi/itbaa";
+
+const pdf = await from("<h1>أهلا Hello</h1>").toBuffer({ singlePage: true }); // Buffer
+from(html).toStream().pipe(res);                  // stream to an HTTP response / S3
+await fromFiles(["./invoices"]).toDir("./pdfs");  // batch, one engine
+```
+
+See [`npm/itbaa`](npm/itbaa/) for the full API.
+
 ### Docker
 
 Use a **glibc** base image, install the Linux runtime libs, then run the installer:
@@ -151,6 +172,10 @@ format is chosen by the output file's extension: `.pdf`, `.png`, or `.jpg`.
 
 # Batch a folder of HTML files into ./pdfs
 ./build/bin/itbaa render ./pages --out-dir ./pdfs
+
+# Pipe-friendly: read HTML from stdin, write bytes to stdout ('-')
+cat document.html | ./build/bin/itbaa render - - > out.pdf
+cat document.html | ./build/bin/itbaa render - - --to png > out.png
 
 # Inspect a document (page count and dimensions) as JSON
 ./build/bin/itbaa info document.html --format json

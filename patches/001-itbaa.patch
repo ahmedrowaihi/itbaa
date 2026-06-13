@@ -173,10 +173,10 @@ index caa5dadebd4..34b270380ec 100644
  endif()
 diff --git a/Utilities/Itbaa/cli/main.cpp b/Utilities/Itbaa/cli/main.cpp
 new file mode 100644
-index 00000000000..c6e7a616961
+index 00000000000..f058cba200e
 --- /dev/null
 +++ b/Utilities/Itbaa/cli/main.cpp
-@@ -0,0 +1,517 @@
+@@ -0,0 +1,573 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF CLI
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -187,6 +187,7 @@ index 00000000000..c6e7a616961
 +#include <AK/ByteString.h>
 +#include <AK/LexicalPath.h>
 +#include <AK/QuickSort.h>
++#include <AK/StringBuilder.h>
 +#include <AK/Vector.h>
 +#include <LibCore/DirIterator.h>
 +#include <LibCore/System.h>
@@ -219,10 +220,12 @@ index 00000000000..c6e7a616961
 +    char const* to { nullptr }; // Derived-output extension for batch: pdf | png | jpg
 +};
 +
-+// True when a name ends in an extension we render to (selects explicit-pair vs derived outputs).
++// True when a name is a render target (an output extension, or "-" for stdout) — selects
++// explicit-pair vs derived outputs.
 +bool is_output_name(StringView name)
 +{
-+    return name.ends_with(".pdf"sv, CaseSensitivity::CaseInsensitive)
++    return name == "-"sv
++        || name.ends_with(".pdf"sv, CaseSensitivity::CaseInsensitive)
 +        || name.ends_with(".png"sv, CaseSensitivity::CaseInsensitive)
 +        || name.ends_with(".jpg"sv, CaseSensitivity::CaseInsensitive)
 +        || name.ends_with(".jpeg"sv, CaseSensitivity::CaseInsensitive);
@@ -329,12 +332,14 @@ index 00000000000..c6e7a616961
 +    printf("Render takes one or many inputs (files or a folder). With one input and an\n");
 +    printf("explicit output, that name is used; otherwise output names are derived (<name>.<fmt>).\n");
 +    printf("The output extension selects the format: .pdf, .png or .jpg.\n\n");
++    printf("Use '-' as the input to read HTML from stdin, or as the output to write bytes to\n");
++    printf("stdout (format from --to, default pdf):  cat in.html | itbaa render - - --to png\n\n");
 +    printf("Options:\n");
 +    printf("  --pages <RANGE>    Pages to render: 3, 2-5, 3-, -4, 1,3,5-7 (default: all)\n");
 +    printf("  --single-page      One tall page, no page breaks (avoids cut content)\n");
 +    printf("  --raster           Embed pages as images in the PDF (no selectable text)\n");
 +    printf("  --scale <N>        Resolution multiplier for image/raster output (default: 2)\n");
-+    printf("  --to <FMT>         Derived-output format for batch: pdf | png | jpg\n");
++    printf("  --to <FMT>         Output format for stdout / derived batch names: pdf | png | jpg\n");
 +    printf("  --out-dir <DIR>    Write derived outputs into DIR (batch)\n");
 +    printf("  --size <PRESET>    a4 | letter | legal | a3 (default: a4)\n");
 +    printf("  --width <PX>       Custom page width (overrides --size)\n");
@@ -475,7 +480,8 @@ index 00000000000..c6e7a616961
 +        }
 +        if (consumed == 1)
 +            continue;
-+        if (argv[i][0] == '-') {
++        // A bare "-" is the stdin/stdout positional, not an option.
++        if (argv[i][0] == '-' && strcmp(argv[i], "-") != 0) {
 +            fprintf(stderr, "error: unknown option '%s'\n", argv[i]);
 +            return 1;
 +        }
@@ -556,6 +562,16 @@ index 00000000000..c6e7a616961
 +    }
 +}
 +
++ByteString read_stdin()
++{
++    StringBuilder builder;
++    char buffer[65536];
++    ssize_t n;
++    while ((n = read(STDIN_FILENO, buffer, sizeof(buffer))) > 0)
++        builder.append(StringView { buffer, static_cast<size_t>(n) });
++    return builder.to_byte_string();
++}
++
 +int cmd_render(int argc, char** argv)
 +{
 +    Options o;
@@ -593,7 +609,15 @@ index 00000000000..c6e7a616961
 +            ++failures;
 +            continue;
 +        }
-+        bool image_output = is_image_name({ job.output.characters(), job.output.length() });
++        bool stdin_input = job.input == "-"sv;
++        bool stdout_output = job.output == "-"sv;
++
++        // Output format: the extension for files; --to (default pdf) for stdout, where there is none.
++        StringView to { o.to ? o.to : "pdf", o.to ? strlen(o.to) : 3 };
++        bool image_output = stdout_output
++            ? (to == "png"sv || to == "jpg"sv || to == "jpeg"sv)
++            : is_image_name({ job.output.characters(), job.output.length() });
++
 +        ItbaaOptions render = o.render;
 +        if (image_output)
 +            render.single_page = 1;
@@ -602,16 +626,43 @@ index 00000000000..c6e7a616961
 +        ItbaaDocumentInfo info {};
 +        {
 +            StderrSilencer silence(o.verbosity != Verbosity::Verbose);
-+            err = itbaa_load_html_file(ctx, job.input.characters());
-+            if (err == ITBAA_OK)
++            if (stdin_input) {
++                auto html = read_stdin();
++                err = itbaa_load_html(ctx, html.characters(), html.length());
++            } else {
++                err = itbaa_load_html_file(ctx, job.input.characters());
++            }
++
++            if (err == ITBAA_OK && stdout_output) {
++                ItbaaPDFBuffer bytes {};
++                if (image_output) {
++                    auto format = (to == "jpg"sv || to == "jpeg"sv) ? ITBAA_IMAGE_JPEG : ITBAA_IMAGE_PNG;
++                    err = itbaa_render_to_image_buffer(ctx, &render, format, &bytes);
++                } else {
++                    err = itbaa_convert(ctx, &render, &bytes);
++                }
++                if (err == ITBAA_OK) {
++                    fwrite(bytes.data, 1, bytes.size, stdout);
++                    fflush(stdout);
++                }
++                itbaa_free_buffer(&bytes);
++            } else if (err == ITBAA_OK) {
 +                err = image_output
 +                    ? itbaa_render_to_image_file(ctx, &render, job.output.characters())
 +                    : itbaa_convert_to_file(ctx, &render, job.output.characters());
-+            if (err == ITBAA_OK)
-+                itbaa_get_info(ctx, &render, &info);
++                if (err == ITBAA_OK)
++                    itbaa_get_info(ctx, &render, &info);
++            }
 +        }
 +        itbaa_context_destroy(ctx);
-+        emit_job_result(o, job, err, info);
++
++        // stdout carries the bytes, so keep result/diagnostic lines off it.
++        if (stdout_output) {
++            if (err != ITBAA_OK)
++                fprintf(stderr, "error: %s: %s\n", stdin_input ? "<stdin>" : job.input.characters(), itbaa_error_string(err));
++        } else {
++            emit_job_result(o, job, err, info);
++        }
 +        if (err != ITBAA_OK)
 +            ++failures;
 +    }
@@ -646,7 +697,12 @@ index 00000000000..c6e7a616961
 +    ItbaaDocumentInfo info {};
 +    {
 +        StderrSilencer silence(o.verbosity != Verbosity::Verbose);
-+        err = itbaa_load_html_file(ctx, input);
++        if (strcmp(input, "-") == 0) {
++            auto html = read_stdin();
++            err = itbaa_load_html(ctx, html.characters(), html.length());
++        } else {
++            err = itbaa_load_html_file(ctx, input);
++        }
 +        if (err == ITBAA_OK)
 +            err = itbaa_get_info(ctx, &o.render, &info);
 +    }
@@ -1523,10 +1579,10 @@ index 00000000000..3301fbf2077
 +}
 diff --git a/Utilities/Itbaa/lib/Itbaa.cpp b/Utilities/Itbaa/lib/Itbaa.cpp
 new file mode 100644
-index 00000000000..2d7353e95aa
+index 00000000000..0c29ae9afc7
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.cpp
-@@ -0,0 +1,419 @@
+@@ -0,0 +1,447 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -1861,6 +1917,17 @@ index 00000000000..2d7353e95aa
 +    return ITBAA_OK;
 +}
 +
++// Render the whole document as one tall page — the unit images are captured from.
++static ErrorOr<Itbaa::RenderedPage> render_single_page(ItbaaContext* ctx, ItbaaOptions const* options)
++{
++    auto config = options_to_config(options);
++    config.single_page = true;
++    auto pages = TRY(ctx->renderer.render(config));
++    if (pages.is_empty())
++        return Error::from_string_literal("no pages rendered");
++    return pages[0];
++}
++
 +ItbaaError itbaa_render_to_image_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path)
 +{
 +    if (!s_initialized)
@@ -1877,21 +1944,38 @@ index 00000000000..2d7353e95aa
 +    else
 +        return ITBAA_ERROR_INVALID_ARGUMENT;
 +
-+    // Image output is a single tall capture of the whole document.
-+    auto config = options_to_config(options);
-+    config.single_page = true;
-+
-+    auto pages_result = ctx->renderer.render(config);
-+    if (pages_result.is_error())
-+        return ITBAA_ERROR_RENDER_FAILED;
-+    auto pages = pages_result.release_value();
-+    if (pages.is_empty())
++    auto page = render_single_page(ctx, options);
++    if (page.is_error())
 +        return ITBAA_ERROR_RENDER_FAILED;
 +
-+    auto write_result = Itbaa::write_image_to_file(pages[0], path, format, raster_scale_for(options));
-+    if (write_result.is_error())
++    if (Itbaa::write_image_to_file(page.value(), path, format, raster_scale_for(options)).is_error())
 +        return ITBAA_ERROR_FILE_WRITE;
 +
++    return ITBAA_OK;
++}
++
++ItbaaError itbaa_render_to_image_buffer(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaImageFormat format, ItbaaPDFBuffer* output)
++{
++    if (!s_initialized)
++        return ITBAA_ERROR_NOT_INITIALIZED;
++    if (!ctx || !output)
++        return ITBAA_ERROR_INVALID_ARGUMENT;
++
++    auto page = render_single_page(ctx, options);
++    if (page.is_error())
++        return ITBAA_ERROR_RENDER_FAILED;
++
++    auto image_format = format == ITBAA_IMAGE_JPEG ? Itbaa::ImageFormat::JPEG : Itbaa::ImageFormat::PNG;
++    auto bytes = Itbaa::encode_image(page.value(), image_format, raster_scale_for(options));
++    if (bytes.is_error())
++        return ITBAA_ERROR_RENDER_FAILED;
++
++    auto buffer = bytes.release_value();
++    output->size = buffer.size();
++    output->data = static_cast<uint8_t*>(malloc(output->size));
++    if (!output->data)
++        return ITBAA_ERROR_MEMORY_ALLOCATION;
++    memcpy(output->data, buffer.data(), output->size);
 +    return ITBAA_OK;
 +}
 +
@@ -1948,10 +2032,10 @@ index 00000000000..2d7353e95aa
 +} // extern "C"
 diff --git a/Utilities/Itbaa/lib/Itbaa.h b/Utilities/Itbaa/lib/Itbaa.h
 new file mode 100644
-index 00000000000..cb9a2f954f4
+index 00000000000..8c33021edb3
 --- /dev/null
 +++ b/Utilities/Itbaa/lib/Itbaa.h
-@@ -0,0 +1,215 @@
+@@ -0,0 +1,227 @@
 +/*
 + * Itbaa (اطبع) - HTML to PDF Conversion Library
 + * Copyright (c) 2025, sudorw <ahmedrowaihi@sudorw.com>
@@ -2013,6 +2097,12 @@ index 00000000000..cb9a2f954f4
 +    ITBAA_PAGE_A3,     /* 1123 x 1587 */
 +    ITBAA_PAGE_CUSTOM, /* Use width/height from options */
 +} ItbaaPageSize;
++
++/* Image output format (for buffer rendering, where there is no path to infer from) */
++typedef enum {
++    ITBAA_IMAGE_PNG,
++    ITBAA_IMAGE_JPEG,
++} ItbaaImageFormat;
 +
 +/* Conversion options */
 +typedef struct {
@@ -2137,7 +2227,13 @@ index 00000000000..cb9a2f954f4
 +ItbaaError itbaa_render_to_image_file(ItbaaContext* ctx, ItbaaOptions const* options, char const* output_path);
 +
 +/**
-+ * Free a PDF buffer returned by itbaa_convert().
++ * Render the loaded HTML to an in-memory image (PNG or JPEG). Captures the full content as
++ * one tall image; options.scale controls resolution. Caller must free with itbaa_free_buffer().
++ */
++ItbaaError itbaa_render_to_image_buffer(ItbaaContext* ctx, ItbaaOptions const* options, ItbaaImageFormat format, ItbaaPDFBuffer* output);
++
++/**
++ * Free a buffer returned by itbaa_convert() or itbaa_render_to_image_buffer().
 + */
 +void itbaa_free_buffer(ItbaaPDFBuffer* buffer);
 +

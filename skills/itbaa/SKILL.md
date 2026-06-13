@@ -35,6 +35,10 @@ itbaa render input.html out.pdf            # vector PDF (selectable text)
 itbaa render input.html out.png --scale 2  # PNG image at 2x resolution
 itbaa render input.html out.jpg            # JPEG
 itbaa info  input.html --format json       # { pages, content_width/height, page_width/height }
+
+# '-' reads HTML from stdin and/or writes bytes to stdout (format via --to, default pdf):
+cat input.html | itbaa render - - > out.pdf
+echo "<h1>hi</h1>" | itbaa render - - --to png > out.png
 ```
 
 Key options for `render`/`info`:
