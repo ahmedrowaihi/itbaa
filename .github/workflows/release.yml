@@ -10,6 +10,9 @@ on:
         description: "Release tag (e.g. v0.1.0)"
         required: true
 
+permissions:
+  contents: read
+
 concurrency:
   group: release-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: true
@@ -46,15 +49,18 @@ jobs:
 
     steps:
       - name: Checkout Itbaa
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
 
       - name: Checkout Ladybird (${{ matrix.variant.name }})
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           repository: ${{ matrix.variant.repo }}
           ref: ${{ matrix.variant.ref }}
           path: ladybird
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Record resolved Ladybird SHA
         id: lb
@@ -87,7 +93,7 @@ jobs:
           CMK
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.12"
 
@@ -126,7 +132,7 @@ jobs:
             libtool llvm@20 mono nasm ninja pkg-config unzip
 
       - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@v1
+        uses: hendrikmuhs/ccache-action@5ebbd400eff9e74630f759d94ddd7b6c26299639 # v1
         with:
           key: ${{ matrix.variant.name }}-${{ matrix.target.os }}-${{ matrix.target.arch }}
           max-size: 3G
@@ -174,10 +180,11 @@ jobs:
 
       - name: Configure
         working-directory: ladybird
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
           # Stamp the reported version from the release tag (v1.2.3 -> 1.2.3).
-          TAG="${{ github.event.inputs.tag || github.ref_name }}"
-          ITBAA_VERSION="${TAG#v}"
+          ITBAA_VERSION="${RELEASE_TAG#v}"
           [ -n "$ITBAA_VERSION" ] || ITBAA_VERSION="0.0.0-dev"
           if [ "${{ matrix.target.os }}" == "macos" ]; then
             # Rust crate static archives aren't 8-byte aligned; the new ld rejects them, the classic linker accepts.
@@ -224,11 +231,12 @@ jobs:
       - name: Prepare artifact
         env:
           NAME: itbaa-${{ matrix.variant.name }}-${{ matrix.target.os }}-${{ matrix.target.arch }}
+          LB_SHA: ${{ steps.lb.outputs.sha }}
         run: |
           mkdir -p artifact
           cp ladybird/Build/bin/itbaa "artifact/$NAME"
           chmod +x "artifact/$NAME"
-          echo "${{ steps.lb.outputs.sha }}" > "artifact/$NAME.commit"
+          echo "$LB_SHA" > "artifact/$NAME.commit"
           cd artifact
           if [ "${{ matrix.target.os }}" == "linux" ]; then
             tar -czvf "$NAME.tar.gz" "$NAME"
@@ -237,7 +245,7 @@ jobs:
           fi
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: itbaa-${{ matrix.variant.name }}-${{ matrix.target.os }}-${{ matrix.target.arch }}
           path: |
@@ -257,17 +265,20 @@ jobs:
 
     steps:
       - name: Checkout Itbaa
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           sparse-checkout: install.sh
           sparse-checkout-cone-mode: false
+          persist-credentials: false
 
       - name: Determine release tag
         id: tag
-        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
           merge-multiple: true
@@ -295,7 +306,7 @@ jobs:
           rm -f itbaa-*.commit
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ steps.tag.outputs.tag }}
           name: Itbaa ${{ steps.tag.outputs.tag }}
@@ -368,4 +379,5 @@ jobs:
     uses: ./.github/workflows/npm.yml
     with:
       tag: ${{ github.event.inputs.tag || github.ref_name }}
-    secrets: inherit
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
